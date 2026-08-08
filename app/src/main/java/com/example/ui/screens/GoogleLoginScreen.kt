@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -85,9 +86,21 @@ fun GoogleLoginScreen(
                 } else {
                     statusMessage = "Unable to retrieve Google credential token from device Play Services."
                 }
+            } catch (e: GetCredentialCancellationException) {
+                statusMessage = "Google Sign-In prompt was closed or cancelled.\n\n" +
+                    "If Google closed immediately without prompting:\n" +
+                    "1. Ensure your SHA-1 key is added to Google Cloud Console (GCP) or Firebase.\n" +
+                    "2. Ensure Package Name is 'com.aistudio.gitexpense.recordbook'.\n" +
+                    "3. Ensure the Web Client ID belongs to the same GCP project."
             } catch (e: GetCredentialException) {
                 val err = e.localizedMessage ?: e.message ?: ""
-                statusMessage = if (err.contains("No credentials available", ignoreCase = true) || err.contains("16", ignoreCase = true)) {
+                statusMessage = if (err.contains("cancelled", ignoreCase = true) || err.contains("canceled", ignoreCase = true)) {
+                    "Google Sign-In prompt was closed or cancelled.\n\n" +
+                    "If Google closed immediately without prompting:\n" +
+                    "1. Ensure your SHA-1 key is added to Google Cloud Console (GCP) or Firebase.\n" +
+                    "2. Ensure Package Name is 'com.aistudio.gitexpense.recordbook'.\n" +
+                    "3. Ensure the Web Client ID belongs to the same GCP project."
+                } else if (err.contains("No credentials available", ignoreCase = true) || err.contains("16", ignoreCase = true)) {
                     "Android Play Services reports: [16] No credentials available.\n\n" +
                     "Why this happens:\n" +
                     "1. Android Credential Manager requires an active Google Account logged into Android OS (Settings -> Accounts).\n" +
