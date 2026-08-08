@@ -25,6 +25,7 @@ import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import android.util.Log
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -87,28 +88,37 @@ fun GoogleLoginScreen(
                     statusMessage = "Unable to retrieve Google credential token from device Play Services."
                 }
             } catch (e: GetCredentialCancellationException) {
+                Log.e("GoogleLoginScreen", "GetCredentialCancellationException: prompt cancelled or dismissed", e)
                 statusMessage = "Google Sign-In prompt was closed or cancelled.\n\n" +
-                    "If Google closed immediately without prompting:\n" +
-                    "1. Ensure your SHA-1 key is added to Google Cloud Console (GCP) or Firebase.\n" +
-                    "2. Ensure Package Name is 'com.aistudio.gitexpense.recordbook'.\n" +
-                    "3. Ensure the Web Client ID belongs to the same GCP project."
+                    "⚠️ COMMON CAUSE: You MUST use the WEB APPLICATION Client ID in code/secrets, NOT the Android Client ID!\n\n" +
+                    "In your GCP Console:\n" +
+                    "• Use Web Client ID: '644847385425-kh2m...'\n" +
+                    "• Do NOT use Android Client ID: '644847385425-ddp0...'\n\n" +
+                    "Also verify:\n" +
+                    "1. SHA-1 is added under 'FlatSheetMetric' (Android Client ID) on GCP.\n" +
+                    "2. Package Name is 'com.aistudio.gitexpense.recordbook'."
             } catch (e: GetCredentialException) {
+                Log.e("GoogleLoginScreen", "GetCredentialException occurred", e)
                 val err = e.localizedMessage ?: e.message ?: ""
                 statusMessage = if (err.contains("cancelled", ignoreCase = true) || err.contains("canceled", ignoreCase = true)) {
                     "Google Sign-In prompt was closed or cancelled.\n\n" +
-                    "If Google closed immediately without prompting:\n" +
-                    "1. Ensure your SHA-1 key is added to Google Cloud Console (GCP) or Firebase.\n" +
-                    "2. Ensure Package Name is 'com.aistudio.gitexpense.recordbook'.\n" +
-                    "3. Ensure the Web Client ID belongs to the same GCP project."
+                    "⚠️ COMMON CAUSE: You MUST use the WEB APPLICATION Client ID in code/secrets, NOT the Android Client ID!\n\n" +
+                    "In your GCP Console:\n" +
+                    "• Use Web Client ID: '644847385425-kh2m...'\n" +
+                    "• Do NOT use Android Client ID: '644847385425-ddp0...'\n\n" +
+                    "Also verify:\n" +
+                    "1. SHA-1 is added under 'FlatSheetMetric' (Android Client ID) on GCP.\n" +
+                    "2. Package Name is 'com.aistudio.gitexpense.recordbook'."
                 } else if (err.contains("No credentials available", ignoreCase = true) || err.contains("16", ignoreCase = true)) {
                     "Android Play Services reports: [16] No credentials available.\n\n" +
-                    "Why this happens:\n" +
-                    "1. Android Credential Manager requires an active Google Account logged into Android OS (Settings -> Accounts).\n" +
-                    "2. Your GCP OAuth Client ID must be authorized for Android package: com.aistudio.gitexpense.recordbook"
+                    "1. Make sure you are passing the Web Application Client ID (644847385425-kh2m...), NOT the Android Client ID.\n" +
+                    "2. Verify an active Google Account is logged into the device (Settings -> Accounts).\n" +
+                    "3. Ensure package 'com.aistudio.gitexpense.recordbook' and SHA-1 match on GCP."
                 } else {
                     "Google Sign-In Error: $err"
                 }
             } catch (e: Exception) {
+                Log.e("GoogleLoginScreen", "General Exception during Google Sign-In", e)
                 statusMessage = "Authentication Error: ${e.localizedMessage ?: e.message ?: "Unknown error"}"
             } finally {
                 isLoading = false
