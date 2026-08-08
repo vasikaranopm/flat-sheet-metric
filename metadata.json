@@ -1,0 +1,6 @@
+{
+  "name": "GIT Record Book",
+  "description": "Gomathi Ilam Thendral - Apartment Maintenance Collection & Expense Tracker linked with Google Sheets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
