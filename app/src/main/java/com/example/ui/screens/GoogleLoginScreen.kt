@@ -55,7 +55,7 @@ fun GoogleLoginScreen(
             statusMessage = null
 
             if (activeClientId.isEmpty()) {
-                statusMessage = "Google OAuth Client ID is required for real-time authentication. Please configure GCP_WEB_CLIENT_ID in AI Studio Secrets."
+                statusMessage = "Google OAuth Client ID is missing. Please ensure GCP_WEB_CLIENT_ID is configured."
                 isLoading = false
                 return@launch
             }
@@ -89,31 +89,15 @@ fun GoogleLoginScreen(
                 }
             } catch (e: GetCredentialCancellationException) {
                 Log.e("GoogleLoginScreen", "GetCredentialCancellationException: prompt cancelled or dismissed", e)
-                statusMessage = "Google Sign-In prompt was closed or cancelled.\n\n" +
-                    "⚠️ COMMON CAUSE: You MUST use the WEB APPLICATION Client ID in code/secrets, NOT the Android Client ID!\n\n" +
-                    "In your GCP Console:\n" +
-                    "• Use Web Client ID: '644847385425-kh2m...'\n" +
-                    "• Do NOT use Android Client ID: '644847385425-ddp0...'\n\n" +
-                    "Also verify:\n" +
-                    "1. SHA-1 is added under 'FlatSheetMetric' (Android Client ID) on GCP.\n" +
-                    "2. Package Name is 'com.aistudio.gitexpense.recordbook'."
+                statusMessage = "Google Sign-In prompt was closed or cancelled by Play Services.\n" +
+                    "Ensure your SHA-1 fingerprint and package name match your Android OAuth Client configuration."
             } catch (e: GetCredentialException) {
                 Log.e("GoogleLoginScreen", "GetCredentialException occurred", e)
                 val err = e.localizedMessage ?: e.message ?: ""
                 statusMessage = if (err.contains("cancelled", ignoreCase = true) || err.contains("canceled", ignoreCase = true)) {
-                    "Google Sign-In prompt was closed or cancelled.\n\n" +
-                    "⚠️ COMMON CAUSE: You MUST use the WEB APPLICATION Client ID in code/secrets, NOT the Android Client ID!\n\n" +
-                    "In your GCP Console:\n" +
-                    "• Use Web Client ID: '644847385425-kh2m...'\n" +
-                    "• Do NOT use Android Client ID: '644847385425-ddp0...'\n\n" +
-                    "Also verify:\n" +
-                    "1. SHA-1 is added under 'FlatSheetMetric' (Android Client ID) on GCP.\n" +
-                    "2. Package Name is 'com.aistudio.gitexpense.recordbook'."
+                    "Google Sign-In prompt was closed or cancelled by Play Services."
                 } else if (err.contains("No credentials available", ignoreCase = true) || err.contains("16", ignoreCase = true)) {
-                    "Android Play Services reports: [16] No credentials available.\n\n" +
-                    "1. Make sure you are passing the Web Application Client ID (644847385425-kh2m...), NOT the Android Client ID.\n" +
-                    "2. Verify an active Google Account is logged into the device (Settings -> Accounts).\n" +
-                    "3. Ensure package 'com.aistudio.gitexpense.recordbook' and SHA-1 match on GCP."
+                    "Android Play Services reports: [16] No credentials available on this device account."
                 } else {
                     "Google Sign-In Error: $err"
                 }
@@ -193,41 +177,7 @@ fun GoogleLoginScreen(
                     lineHeight = 18.sp
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // OAuth Client ID Loaded Status Indicator
-                Surface(
-                    color = if (activeClientId.isNotEmpty()) Emerald100 else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            imageVector = if (activeClientId.isNotEmpty()) Icons.Default.CheckCircle else Icons.Default.Warning,
-                            contentDescription = "Secret Status",
-                            tint = if (activeClientId.isNotEmpty()) Emerald600 else MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (activeClientId.isNotEmpty()) {
-                                val masked = if (activeClientId.length > 16) "${activeClientId.take(12)}...${activeClientId.takeLast(8)}" else activeClientId
-                                "Secret Loaded: $masked"
-                            } else {
-                                "GCP_WEB_CLIENT_ID missing in AI Studio Secrets"
-                            },
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = if (activeClientId.isNotEmpty()) Emerald600 else MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
                 // Primary Google Sign-In Button
                 Button(
@@ -284,7 +234,7 @@ fun GoogleLoginScreen(
                     ) {
                         Text(
                             text = statusMessage ?: "",
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.error,
                             textAlign = TextAlign.Start,
                             modifier = Modifier.padding(12.dp)
