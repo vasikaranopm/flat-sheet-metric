@@ -17,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -46,6 +47,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MyApplicationTheme {
+                val context = LocalContext.current
                 val uiState by viewModel.uiState.collectAsState()
                 val navController = rememberNavController()
                 val snackbarHostState = remember { SnackbarHostState() }
@@ -125,11 +127,12 @@ class MainActivity : ComponentActivity() {
                             composable("dashboard") {
                                 DashboardScreen(
                                     collectionRecord = uiState.collectionRecord,
+                                    expenses = uiState.expenses,
                                     config = uiState.config,
                                     isLoading = uiState.isLoading,
                                     syncMessage = uiState.syncMessage,
                                     onTriggerSync = { viewModel.triggerSync() },
-                                    onLogout = { viewModel.logout() },
+                                    onLogout = { viewModel.logout(context) },
                                     onNavigateToExpenses = { navController.navigate("expenses") },
                                     onNavigateToYearlyReport = { navController.navigate("yearly_report") },
                                     onNavigateToContacts = { navController.navigate("contacts") },

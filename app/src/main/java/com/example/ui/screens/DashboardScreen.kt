@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.CollectionRecord
+import com.example.data.model.ExpenseRecord
 import com.example.data.model.GoogleSheetConfig
 import com.example.ui.theme.*
 
@@ -33,6 +34,7 @@ import java.util.Locale
 @Composable
 fun DashboardScreen(
     collectionRecord: CollectionRecord?,
+    expenses: List<ExpenseRecord> = emptyList(),
     config: GoogleSheetConfig,
     isLoading: Boolean = false,
     syncMessage: String? = null,
@@ -57,9 +59,9 @@ fun DashboardScreen(
 
     // Calculated financial aggregates
     val totalCollected = collectionRecord?.totalAmount ?: 0.0
-    val totalSpent = 0.0
+    val totalSpent = expenses.sumOf { it.amount }
     val remainingBalance = totalCollected - totalSpent
-    val spentPercentage = if (totalCollected > 0) ((totalSpent / totalCollected) * 100).toFloat() else 0f
+    val spentPercentage = if (totalCollected > 0) ((totalSpent / totalCollected) * 100).coerceIn(0.0, 100.0).toFloat() else 0f
 
     val flats = listOf(
         FlatInfo("1A", "Flat 1A", collectionRecord?.flat1AAmount ?: 0.0),
@@ -252,7 +254,7 @@ fun DashboardScreen(
             MetricCard(
                 title = "Total Spent",
                 amount = "₹${totalSpent.toInt()}",
-                subtitle = "July 2026",
+                subtitle = if (expenses.isNotEmpty()) "${expenses.size} expenses synced" else "July 2026",
                 icon = Icons.Default.ReceiptLong,
                 accentColor = Rose600,
                 modifier = Modifier.weight(1f)

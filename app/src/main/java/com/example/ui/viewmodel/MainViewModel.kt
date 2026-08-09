@@ -224,8 +224,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun logout() {
-        loginWithGoogle("")
+    fun logout(context: android.content.Context? = null) {
+        viewModelScope.launch {
+            val updated = uiState.value.config.copy(
+                userEmail = "",
+                isLoggedIn = false
+            )
+            repository.updateConfig(updated)
+            _syncMessage.value = "Signed out"
+        }
+        context?.let { ctx ->
+            try {
+                val gso = com.google.android.gms.auth.api.signin.GoogleSignInOptions.Builder(
+                    com.google.android.gms.auth.api.signin.GoogleSignInOptions.DEFAULT_SIGN_IN
+                ).build()
+                com.google.android.gms.auth.api.signin.GoogleSignIn.getClient(ctx, gso).signOut()
+            } catch (_: Exception) {}
+        }
     }
 
     fun addExpense(

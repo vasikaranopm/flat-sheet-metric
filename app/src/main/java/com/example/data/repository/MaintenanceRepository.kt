@@ -184,24 +184,119 @@ class MaintenanceRepository(private val database: AppDatabase) {
         val lines = csv.lines().filter { it.isNotBlank() }
         if (lines.size <= 1) return emptyList()
 
+        val headerLine = lines.first()
+        val headerCols = parseCsvLine(headerLine).map { it.lowercase().trim('"').trim() }
+
+        // Find matching columns by header names
+        var yearCol = headerCols.indexOfFirst { it.contains("year") }
+        var monthCol = headerCols.indexOfFirst { it.contains("month") }
+        var dateCol = headerCols.indexOfFirst { it.contains("date") || it.contains("day") }
+        var particularsCol = headerCols.indexOfFirst {
+            it.contains("particular") || it.contains("description") || it.contains("item") ||
+                    it.contains("detail") || it.contains("purpose") || it.contains("name") || it.contains("title")
+        }
+        var remarksCol = headerCols.indexOfFirst { it.contains("remark") || it.contains("note") || it.contains("comment") }
+        var amountCol = headerCols.indexOfFirst {
+            it.contains("amount") || it.contains("cost") || it.contains("price") ||
+                    it.contains("rs") || it.contains("inr") || it.contains("₹") || it.contains("spent") || it.contains("total")
+        }
+        var vendorCol = headerCols.indexOfFirst {
+            it.contains("vendor") || it.contains("payee") || it.contains("paid") || it.contains("by") || it.contains("person")
+        }
+        var billCol = headerCols.indexOfFirst { it.contains("bill") || it.contains("doc") }
+        var pictureCol = headerCols.indexOfFirst { it.contains("picture") || it.contains("photo") || it.contains("image") }
+        var balanceCol = headerCols.indexOfFirst { it.contains("balance") || it.contains("bal") }
+        var categoryCol = headerCols.indexOfFirst { it.contains("category") || it.contains("type") || it.contains("head") }
+
+        val sampleRows = lines.drop(1).take(15).map { parseCsvLine(it) }
+
+        // Auto-detect amount column if header didn't match
+        if (amountCol == -1 && sampleRows.isNotEmpty()) {
+            val maxCols = sampleRows.maxOfOrNull { it.size } ?: 0
+            for (colIdx in 0 until maxCols) {
+                val numericCount = sampleRows.count { row ->
+                    val cell = row.getOrNull(colIdx)?.trim('"')?.trim()?.replace("₹", "")?.replace(",", "") ?: ""
+                    val num = cell.toDoubleOrNull()
+                    num != null && num > 0
+                }
+                if (numericCount >= (sampleRows.size * 0.4)) {
+                    amountCol = colIdx
+                    break
+                }
+            }
+        }
+
+        // Auto-detect particulars column if header didn't match
+        if (particularsCol == -1 && sampleRows.isNotEmpty()) {
+            val maxCols = sampleRows.maxOfOrNull { it.size } ?: 0
+            for (colIdx in 0 until maxCols) {
+                if (colIdx != amountCol && colIdx != dateCol && colIdx != monthCol && colIdx != yearCol) {
+                    particularsCol = colIdx
+                    break
+                }
+            }
+        }
+
+        // Fallbacks for standard formats if still undetected
+        if (particularsCol == -1) particularsCol = if (headerCols.size > 1) 1 else 0
+        if (amountCol == -1) amountCol = (headerCols.size - 1).coerceAtLeast(0)
+
+        var runningBalance = 12000.0 // Default starting opening balance
+
         return lines.drop(1).mapIndexedNotNull { index, line ->
             val cols = parseCsvLine(line)
-            if (cols.size >= 4) {
-                ExpenseRecord(
-                    id = index + 1,
-                    year = cols.getOrNull(0)?.trim('"') ?: "2026",
-                    month = cols.getOrNull(1)?.trim('"') ?: "",
-                    dateDay = cols.getOrNull(2)?.trim('"') ?: "",
-                    particulars = cols.getOrNull(3)?.trim('"') ?: "",
-                    remarks = cols.getOrNull(4)?.trim('"') ?: "",
-                    amount = cols.getOrNull(5)?.trim('"')?.toDoubleOrNull() ?: 0.0,
-                    vendorPayee = cols.getOrNull(6)?.trim('"') ?: "",
-                    billAvailable = cols.getOrNull(7)?.trim('"') ?: "N/A",
-                    picture = cols.getOrNull(8)?.trim('"') ?: "N/A",
-                    balance = cols.getOrNull(9)?.trim('"')?.toDoubleOrNull() ?: 0.0,
-                    category = cols.getOrNull(10)?.trim('"') ?: "General"
-                )
-            } else null
+            if (cols.isEmpty() || cols.all { it.isBlank() }) return@mapIndexedNotNull null
+
+            fun getVal(colIdx: Int): String {
+                if (colIdx == -1) return ""
+                return cols.getOrNull(colIdx)?.trim('"')?.trim() ?: ""
+            }
+
+            fun parseAmountVal(colIdx: Int): Double {
+                val str = getVal(colIdx).replace("₹", "").replace(",", "").replace("Rs.", "").replace("INR", "").trim()
+                return str.toDoubleOrNull() ?: 0.0
+            }
+
+            val amount = parseAmountVal(amountCol)
+            val particulars = getVal(particularsCol).ifBlank {
+                cols.firstOrNull { it.isNotBlank() && parseAmountVal(cols.indexOf(it)) == 0.0 }?.trim('"') ?: "Expense Item #${index + 1}"
+            }
+
+            val dateStr = getVal(dateCol).ifBlank { "01" }
+            val monthStr = getVal(monthCol).ifBlank { "July" }
+            val yearStr = getVal(yearCol).ifBlank { "2026" }
+            val categoryStr = getVal(categoryCol).ifBlank {
+                if (particulars.contains("clean", ignoreCase = true) || particulars.contains("sweep", ignoreCase = true)) "Cleaning"
+                else if (particulars.contains("motor", ignoreCase = true) || particulars.contains("sensor", ignoreCase = true) || particulars.contains("alter", ignoreCase = true)) "Alteration/Additional work"
+                else "Common Purchases"
+            }
+            val vendorStr = getVal(vendorCol).ifBlank { "General Vendor" }
+            val remarksStr = getVal(remarksCol).ifBlank { "Recorded from Google Sheet" }
+            val billStr = getVal(billCol).ifBlank { "Available" }
+            val pictureStr = getVal(pictureCol).ifBlank { "N/A" }
+
+            val explicitBalance = parseAmountVal(balanceCol)
+            val finalBalance = if (explicitBalance > 0) {
+                explicitBalance
+            } else {
+                runningBalance -= amount
+                runningBalance
+            }
+
+            ExpenseRecord(
+                id = index + 1,
+                year = yearStr,
+                month = monthStr,
+                dateDay = dateStr,
+                particulars = particulars,
+                remarks = remarksStr,
+                amount = amount,
+                vendorPayee = vendorStr,
+                billAvailable = billStr,
+                picture = pictureStr,
+                balance = finalBalance,
+                category = categoryStr
+            )
         }
     }
 

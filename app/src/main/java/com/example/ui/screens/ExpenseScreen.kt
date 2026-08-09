@@ -41,12 +41,15 @@ fun ExpenseScreen(
     onNavigateBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val categories = listOf("All", "Cleaning", "Alteration/Additional work", "Common Purchases")
+    val categories = remember(expenses) {
+        val uniqueCats = expenses.map { it.category }.filter { it.isNotBlank() }.distinct()
+        listOf("All") + if (uniqueCats.isEmpty()) listOf("Cleaning", "Alteration/Additional work", "Common Purchases") else uniqueCats
+    }
 
+    val totalExpenseSum = expenses.sumOf { it.amount }
     val cleaningSum = expenses.filter { it.category.contains("Cleaning", ignoreCase = true) }.sumOf { it.amount }
-    val alterationSum = expenses.filter { it.category.contains("Alteration", ignoreCase = true) }.sumOf { it.amount }
-    val purchasesSum = expenses.filter { it.category.contains("Purchases", ignoreCase = true) }.sumOf { it.amount }
-    val totalExpenseSum = cleaningSum + alterationSum + purchasesSum
+    val alterationSum = expenses.filter { it.category.contains("Alteration", ignoreCase = true) || it.category.contains("Motor", ignoreCase = true) }.sumOf { it.amount }
+    val purchasesSum = (totalExpenseSum - cleaningSum - alterationSum).coerceAtLeast(0.0)
 
     var selectedExpenseItem by remember { mutableStateOf<ExpenseRecord?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
