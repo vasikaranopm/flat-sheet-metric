@@ -66,11 +66,16 @@ abstract class AppDatabase : RoomDatabase() {
                 INSTANCE?.let { database ->
                     CoroutineScope(Dispatchers.IO).launch {
                         val currentConfig = database.configDao().getConfigSync()
+                        val defaultSheetId = extractSpreadsheetId(getDefaultSheetLinkEnv())
                         if (currentConfig == null) {
                             populateInitialData(database)
                         } else {
-                            // Reset cached login state on launch so real-time Google Sign-In flow is requested
-                            database.configDao().saveConfig(currentConfig.copy(userEmail = "", isLoggedIn = false))
+                            val updatedConfig = if (currentConfig.spreadsheetId.isBlank() && defaultSheetId.isNotBlank()) {
+                                currentConfig.copy(spreadsheetId = defaultSheetId, userEmail = "", isLoggedIn = false)
+                            } else {
+                                currentConfig.copy(userEmail = "", isLoggedIn = false)
+                            }
+                            database.configDao().saveConfig(updatedConfig)
                         }
                     }
                 }
@@ -78,12 +83,13 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         private suspend fun populateInitialData(db: AppDatabase) {
-            // Save initial Google Sheet Config without pre-logged mock state
+            val defaultSheetId = extractSpreadsheetId(getDefaultSheetLinkEnv())
+            // Save initial Google Sheet Config with preloaded env sheet link if present
             db.configDao().saveConfig(
                 GoogleSheetConfig(
                     id = 1,
                     spreadsheetTitle = "Gomathi Ilam Thendral - Maintenance Record Book",
-                    spreadsheetId = "",
+                    spreadsheetId = defaultSheetId,
                     gcpProjectId = "",
                     serviceAccountEmail = "",
                     apiKey = "",

@@ -63,7 +63,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val servicesFlow = repository.serviceContacts
         val configFlow = repository.googleSheetConfig.map { config ->
             val c = config ?: GoogleSheetConfig()
-            if (c.userEmail.isBlank()) c.copy(isLoggedIn = false) else c
+            val defaultSheetId = extractSpreadsheetId(getDefaultSheetLinkEnv())
+            val updatedConfig = if (c.spreadsheetId.isBlank() && defaultSheetId.isNotBlank()) {
+                c.copy(spreadsheetId = defaultSheetId)
+            } else c
+            if (updatedConfig.userEmail.isBlank()) updatedConfig.copy(isLoggedIn = false) else updatedConfig
         }
 
         val financialFlow = combine(
@@ -125,6 +129,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = MainUiState()
         )
+
+        viewModelScope.launch {
+            repository.googleSheetConfig.collect { config ->
+                val sheetId = config?.spreadsheetId ?: extractSpreadsheetId(getDefaultSheetLinkEnv())
+                if (sheetId.isNotBlank() && (config == null || config.lastSyncTime == 0L)) {
+                    triggerSync()
+                }
+            }
+        }
     }
 
     fun onSearchQueryChanged(query: String) {
@@ -140,7 +153,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isLoading.value = true
             val result = repository.syncGoogleSheet(uiState.value.config)
             _isLoading.value = false
-            _syncMessage.value = result.getOrDefault("Synced with Google Sheet")
+            result.fold(
+                onSuccess = { msg ->
+                    _syncMessage.value = msg
+                },
+                onFailure = { err ->
+                    _syncMessage.value = "Validation Error: ${err.message ?: "Failed to validate Google Sheet link"}"
+                }
+            )
         }
     }
 
@@ -164,11 +184,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 serviceAccountEmail = serviceAccount,
                 userEmail = userEmail,
                 webClientId = webClientId,
-                isLoggedIn = userEmail.isNotEmpty(),
-                lastSyncTime = System.currentTimeMillis()
+                isLoggedIn = userEmail.isNotEmpty()
             )
             repository.updateConfig(updated)
-            _syncMessage.value = "Updated GCP Service Account & Google Sheet details"
+            // Immediately run validation and data loading
+            _isLoading.value = true
+            val syncResult = repository.syncGoogleSheet(updated)
+            _isLoading.value = false
+            syncResult.fold(
+                onSuccess = { msg ->
+                    _syncMessage.value = msg
+                },
+                onFailure = { err ->
+                    _syncMessage.value = "Validation Failed: ${err.message}"
+                }
+            )
         }
     }
 

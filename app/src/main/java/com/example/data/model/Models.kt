@@ -84,3 +84,20 @@ data class GoogleSheetConfig(
     val isReadOnly: Boolean = true,
     val lastSyncTime: Long = 0L
 )
+
+fun extractSpreadsheetId(input: String): String {
+    val trimmed = input.trim()
+    if (trimmed.isEmpty()) return ""
+    val pattern = Regex("/spreadsheets/d/([a-zA-Z0-9-_]+)")
+    val match = pattern.find(trimmed)
+    return match?.groupValues?.get(1) ?: trimmed
+}
+
+fun getDefaultSheetLinkEnv(): String {
+    return try {
+        val link = com.example.BuildConfig.DEFAULT_SHEET_LINK
+        if (link == "DEFAULT_SHEET_LINK_PLACEHOLDER") "" else link
+    } catch (e: Exception) {
+        ""
+    }
+}

@@ -126,6 +126,8 @@ class MainActivity : ComponentActivity() {
                                 DashboardScreen(
                                     collectionRecord = uiState.collectionRecord,
                                     config = uiState.config,
+                                    isLoading = uiState.isLoading,
+                                    syncMessage = uiState.syncMessage,
                                     onTriggerSync = { viewModel.triggerSync() },
                                     onLogout = { viewModel.logout() },
                                     onNavigateToExpenses = { navController.navigate("expenses") },
@@ -170,10 +172,13 @@ class MainActivity : ComponentActivity() {
                             composable("login_config") {
                                 LoginConfigScreen(
                                     config = uiState.config,
+                                    isLoading = uiState.isLoading,
+                                    syncMessage = uiState.syncMessage,
                                     onLogin = { email, clientVal -> viewModel.loginWithGoogle(email, clientVal) },
                                     onSaveGcpConfig = { spreadsheetId, apiKey, gcpProject, serviceAccount, userEmail, webClientId ->
                                         viewModel.updateGcpConfig(spreadsheetId, apiKey, gcpProject, serviceAccount, userEmail, webClientId)
                                     },
+                                    onTriggerSync = { viewModel.triggerSync() },
                                     onContinueToDashboard = {
                                         navController.navigate("dashboard") {
                                             popUpTo("login_config") { inclusive = true }

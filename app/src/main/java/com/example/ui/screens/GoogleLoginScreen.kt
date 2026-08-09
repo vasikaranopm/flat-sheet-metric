@@ -55,10 +55,9 @@ fun GoogleLoginScreen(
 
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
-    var isRetryingBasic by remember { mutableStateOf(false) }
 
-    // Basic Google Sign-In Launcher (Fallback when ID Token request fails)
-    val basicSignInLauncher = rememberLauncherForActivityResult(
+    // Single Standard Google Sign-In Launcher
+    val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         isLoading = false
@@ -72,74 +71,15 @@ fun GoogleLoginScreen(
                 statusMessage = "Google Sign-In was not completed. Please try again."
             }
         } catch (e: ApiException) {
-            Log.e("GoogleLoginScreen", "Basic GoogleSignIn failed with code ${e.statusCode}", e)
+            Log.e("GoogleLoginScreen", "GoogleSignIn failed with code ${e.statusCode}", e)
             val lastAccount = GoogleSignIn.getLastSignedInAccount(context)
             if (lastAccount?.email != null) {
                 onLogin(lastAccount.email!!, activeClientId)
             } else if (userEmail.isNotEmpty()) {
                 onLogin(userEmail, activeClientId)
             } else {
-                statusMessage = "Google Sign-In prompt closed or canceled (Error ${e.statusCode}). Please try again."
+                statusMessage = "Google Sign-In canceled or error (Code ${e.statusCode}). Tap 'Sign in with Google' to try again."
             }
-        }
-    }
-
-    // Standard Google Sign-In Launcher
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        try {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            val account = task.getResult(ApiException::class.java)
-            val email = account?.email
-            if (!email.isNullOrEmpty()) {
-                isLoading = false
-                onLogin(email, activeClientId)
-            } else {
-                // Fallback to basic sign-in if email empty
-                val basicGso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                    .requestEmail()
-                    .build()
-                val client = GoogleSignIn.getClient(context, basicGso)
-                basicSignInLauncher.launch(client.signInIntent)
-            }
-        } catch (e: ApiException) {
-            Log.e("GoogleLoginScreen", "GoogleSignIn ID Token failed with code ${e.statusCode}", e)
-            // On Play Services error code 12500, 10, or 12501, try basic email sign-in immediately
-            try {
-                val basicGso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                    .requestEmail()
-                    .build()
-                val client = GoogleSignIn.getClient(context, basicGso)
-                val lastAccount = GoogleSignIn.getLastSignedInAccount(context)
-                if (lastAccount?.email != null) {
-                    isLoading = false
-                    onLogin(lastAccount.email!!, activeClientId)
-                } else {
-                    isRetryingBasic = true
-                    basicSignInLauncher.launch(client.signInIntent)
-                }
-            } catch (ex: Exception) {
-                Log.e("GoogleLoginScreen", "Basic sign-in launcher error", ex)
-                isLoading = false
-                statusMessage = "Google Sign-In failed (Code ${e.statusCode}). Tap 'Sign in with Google' to try again."
-            }
-        }
-    }
-
-    fun launchGoogleSignInClient() {
-        try {
-            val gsoBuilder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestEmail()
-            if (activeClientId.isNotEmpty()) {
-                gsoBuilder.requestIdToken(activeClientId)
-            }
-            val googleSignInClient = GoogleSignIn.getClient(context, gsoBuilder.build())
-            googleSignInLauncher.launch(googleSignInClient.signInIntent)
-        } catch (e: Exception) {
-            Log.e("GoogleLoginScreen", "Failed to launch Google Sign-In client", e)
-            isLoading = false
-            statusMessage = "Unable to launch Google Sign-In: ${e.localizedMessage}"
         }
     }
 
@@ -147,7 +87,7 @@ fun GoogleLoginScreen(
         isLoading = true
         statusMessage = null
 
-        // If user already signed in previously on Play Services, reuse account
+        // Check if user is already signed in on device
         val lastAccount = GoogleSignIn.getLastSignedInAccount(context)
         if (lastAccount?.email != null) {
             isLoading = false
@@ -155,40 +95,16 @@ fun GoogleLoginScreen(
             return
         }
 
-        // Try Credential Manager first, then GoogleSignIn
-        coroutineScope.launch {
-            try {
-                val credentialManager = CredentialManager.create(context)
-                val googleIdOption = GetGoogleIdOption.Builder()
-                    .setFilterByAuthorizedAccounts(false)
-                    .setServerClientId(activeClientId)
-                    .setAutoSelectEnabled(false)
-                    .build()
+        try {
+            val gsoBuilder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestEmail()
 
-                val request = GetCredentialRequest.Builder()
-                    .addCredentialOption(googleIdOption)
-                    .build()
-
-                val result = credentialManager.getCredential(
-                    context = context,
-                    request = request
-                )
-
-                val credential = result.credential
-                if (credential is CustomCredential &&
-                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
-                ) {
-                    val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-                    val email = googleIdTokenCredential.id
-                    isLoading = false
-                    onLogin(email, activeClientId)
-                } else {
-                    launchGoogleSignInClient()
-                }
-            } catch (e: Exception) {
-                Log.w("GoogleLoginScreen", "CredentialManager failed, falling back to GoogleSignInClient", e)
-                launchGoogleSignInClient()
-            }
+            val googleSignInClient = GoogleSignIn.getClient(context, gsoBuilder.build())
+            googleSignInLauncher.launch(googleSignInClient.signInIntent)
+        } catch (e: Exception) {
+            Log.e("GoogleLoginScreen", "Failed to launch Google Sign-In", e)
+            isLoading = false
+            statusMessage = "Unable to launch Google Sign-In: ${e.localizedMessage}"
         }
     }
 

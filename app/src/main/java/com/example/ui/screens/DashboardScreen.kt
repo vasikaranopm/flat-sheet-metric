@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,10 +26,16 @@ import com.example.data.model.CollectionRecord
 import com.example.data.model.GoogleSheetConfig
 import com.example.ui.theme.*
 
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
 @Composable
 fun DashboardScreen(
     collectionRecord: CollectionRecord?,
     config: GoogleSheetConfig,
+    isLoading: Boolean = false,
+    syncMessage: String? = null,
     onTriggerSync: () -> Unit,
     onLogout: () -> Unit,
     onNavigateToExpenses: () -> Unit,
@@ -38,6 +45,15 @@ fun DashboardScreen(
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
+
+    val lastSyncedText = remember(config.lastSyncTime) {
+        if (config.lastSyncTime > 0) {
+            val sdf = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
+            "Synced: ${sdf.format(Date(config.lastSyncTime))}"
+        } else {
+            "Not synced"
+        }
+    }
 
     // Calculated financial aggregates
     val totalCollected = collectionRecord?.totalAmount ?: 0.0
@@ -61,6 +77,42 @@ fun DashboardScreen(
             .verticalScroll(scrollState)
             .padding(16.dp)
     ) {
+        // Loader banner if currently syncing
+        if (isLoading) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                colors = CardDefaults.cardColors(containerColor = Amber100),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        color = Slate900,
+                        strokeWidth = 2.5.dp
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Validating & Fetching Data...",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Slate900
+                        )
+                        Text(
+                            text = "Connecting to Google Sheet link...",
+                            fontSize = 11.sp,
+                            color = Slate800
+                        )
+                    }
+                }
+            }
+        }
+
         // Top Header Banner
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -121,53 +173,60 @@ fun DashboardScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Icon(
-                            imageVector = if (config.isLoggedIn) Icons.Default.CheckCircle else Icons.Default.Info,
+                            imageVector = if (config.spreadsheetId.isNotBlank()) Icons.Default.CheckCircle else Icons.Default.Info,
                             contentDescription = null,
-                            tint = if (config.isLoggedIn) Emerald600 else Amber500,
+                            tint = if (config.spreadsheetId.isNotBlank()) Emerald600 else Amber500,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (config.isLoggedIn) {
-                                if (config.userEmail.isNotEmpty()) "Live Sheet Synced (${config.userEmail})" else "Live Sheet Synced"
-                            } else "Initial Mode (Local Offline Record)",
-                            fontSize = 12.sp,
-                            color = Color.White,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Column {
+                            Text(
+                                text = if (config.spreadsheetId.isNotBlank()) "Google Sheet Linked" else "No Sheet Linked",
+                                fontSize = 12.sp,
+                                color = Color.White,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = lastSyncedText,
+                                fontSize = 10.sp,
+                                color = Amber100
+                            )
+                        }
                     }
 
-                    if (config.isLoggedIn) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(
-                                onClick = onTriggerSync,
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Icon(Icons.Default.Sync, contentDescription = "Sync", tint = Amber500, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Sync", fontSize = 12.sp, color = Amber500)
-                            }
-                            Spacer(modifier = Modifier.width(2.dp))
-                            TextButton(
-                                onClick = onLogout,
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                                modifier = Modifier.testTag("dashboard_logout_button")
-                            ) {
-                                Icon(Icons.Default.Logout, contentDescription = "Sign Out", tint = Rose600, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Sign Out", fontSize = 12.sp, color = Rose600, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    } else {
-                        TextButton(
-                            onClick = onNavigateToConfig,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Button(
+                            onClick = onTriggerSync,
+                            enabled = !isLoading,
+                            colors = ButtonDefaults.buttonColors(containerColor = Amber500, contentColor = Slate900),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.testTag("dashboard_sync_button")
                         ) {
-                            Icon(Icons.Default.LockOpen, contentDescription = "Login", tint = Amber500, modifier = Modifier.size(14.dp))
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(12.dp),
+                                    color = Slate900,
+                                    strokeWidth = 1.5.dp
+                                )
+                            } else {
+                                Icon(Icons.Default.Sync, contentDescription = "Sync", modifier = Modifier.size(14.dp))
+                            }
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Login", fontSize = 12.sp, color = Amber500, fontWeight = FontWeight.Bold)
+                            Text("Sync Data", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        if (config.isLoggedIn) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(
+                                onClick = onLogout,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .testTag("dashboard_logout_button")
+                            ) {
+                                Icon(Icons.Default.Logout, contentDescription = "Sign Out", tint = Rose600, modifier = Modifier.size(16.dp))
+                            }
                         }
                     }
                 }
