@@ -26,6 +26,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.data.model.*
 import com.example.ui.screens.*
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.MainViewModel
@@ -164,18 +165,63 @@ class MainActivity : ComponentActivity() {
                             }
 
                             composable("yearly_report") {
+                                val col = uiState.collectionRecord
+                                val contributions = if (uiState.yearlyContributions.isNotEmpty()) {
+                                    uiState.yearlyContributions
+                                } else if (col != null) {
+                                    listOf(
+                                        YearlyContribution("1A", "Flat 1A", col.flat1AAmount),
+                                        YearlyContribution("1B", "Flat 1B", col.flat1BAmount),
+                                        YearlyContribution("2A", "Flat 2A", col.flat2AAmount),
+                                        YearlyContribution("2B", "Flat 2B", col.flat2BAmount),
+                                        YearlyContribution("3A", "Flat 3A", col.flat3AAmount),
+                                        YearlyContribution("3B", "Flat 3B", col.flat3BAmount)
+                                    )
+                                } else emptyList()
+
+                                val categories = if (uiState.yearlyCategories.isNotEmpty()) {
+                                    uiState.yearlyCategories
+                                } else {
+                                    uiState.expenses.groupBy { it.category }
+                                        .map { (cat, list) -> YearlyExpenseCategory(category = cat, amount2026 = list.sumOf { it.amount }) }
+                                }
+
+                                val majorWorks = if (uiState.majorWorks.isNotEmpty()) {
+                                    uiState.majorWorks
+                                } else {
+                                    uiState.expenses.filter {
+                                        it.amount >= 2000 ||
+                                                it.particulars.contains("sensor", ignoreCase = true) ||
+                                                it.particulars.contains("motor", ignoreCase = true) ||
+                                                it.category.contains("Alteration", ignoreCase = true)
+                                    }.map { MajorWork(description = it.particulars, amount2026 = it.amount) }
+                                }
+
                                 YearlyReportScreen(
-                                    contributions = uiState.yearlyContributions,
-                                    categories = uiState.yearlyCategories,
-                                    majorWorks = uiState.majorWorks,
+                                    contributions = contributions,
+                                    categories = categories,
+                                    majorWorks = majorWorks,
                                     onNavigateBack = null
                                 )
                             }
 
                             composable("contacts") {
+                                val defaultOwners = listOf(
+                                    OwnerContact("1A", "Flat 1A Resident", "", "Resident"),
+                                    OwnerContact("1B", "Flat 1B Resident", "", "Resident"),
+                                    OwnerContact("2A", "Flat 2A Resident", "", "Resident"),
+                                    OwnerContact("2B", "Flat 2B Resident", "", "Resident"),
+                                    OwnerContact("3A", "Flat 3A Resident", "", "Resident"),
+                                    OwnerContact("3B", "Flat 3B Resident", "", "Resident")
+                                )
+                                val defaultServices = listOf(
+                                    ServiceContact("Cleaning & Sanitation", "Housekeeping Maid", "", "Common Area Sanitation"),
+                                    ServiceContact("Motor & Electrical", "Technician / Electrician", "", "Water Pump Sensor & Wiring"),
+                                    ServiceContact("Plumbing", "Plumber", "", "Common Water Line Maintenance")
+                                )
                                 ContactsScreen(
-                                    ownerContacts = uiState.ownerContacts,
-                                    serviceContacts = uiState.serviceContacts,
+                                    ownerContacts = if (uiState.ownerContacts.isNotEmpty()) uiState.ownerContacts else defaultOwners,
+                                    serviceContacts = if (uiState.serviceContacts.isNotEmpty()) uiState.serviceContacts else defaultServices,
                                     onNavigateBack = null
                                 )
                             }
