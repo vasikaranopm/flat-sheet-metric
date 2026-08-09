@@ -1,7 +1,8 @@
 package com.example.ui.screens
 
+import android.content.pm.PackageManager
+import android.util.Log
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,10 +24,9 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
+import com.example.ui.theme.*
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
-import android.util.Log
-import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,12 +47,14 @@ fun GoogleLoginScreen(
     val activeClientId = webClientId.ifEmpty { secretClientId }
 
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    var isCancelledByPlayServices by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
 
     fun performGoogleSignIn() {
         coroutineScope.launch {
             isLoading = true
             statusMessage = null
+            isCancelledByPlayServices = false
 
             if (activeClientId.isEmpty()) {
                 statusMessage = "Google OAuth Client ID is missing. Please ensure GCP_WEB_CLIENT_ID is configured."
@@ -89,15 +91,17 @@ fun GoogleLoginScreen(
                 }
             } catch (e: GetCredentialCancellationException) {
                 Log.e("GoogleLoginScreen", "GetCredentialCancellationException: prompt cancelled or dismissed", e)
-                statusMessage = "Google Sign-In prompt was closed or cancelled by Play Services.\n" +
-                    "Ensure your SHA-1 fingerprint and package name match your Android OAuth Client configuration."
+                isCancelledByPlayServices = true
+                statusMessage = "Google Sign-In prompt was closed/cancelled by Play Services.\n\n" +
+                        "Note: Play Services automatically closes the modal on Android emulators when no Google Account is added under Android Settings -> Accounts."
             } catch (e: GetCredentialException) {
                 Log.e("GoogleLoginScreen", "GetCredentialException occurred", e)
+                isCancelledByPlayServices = true
                 val err = e.localizedMessage ?: e.message ?: ""
                 statusMessage = if (err.contains("cancelled", ignoreCase = true) || err.contains("canceled", ignoreCase = true)) {
                     "Google Sign-In prompt was closed or cancelled by Play Services."
                 } else if (err.contains("No credentials available", ignoreCase = true) || err.contains("16", ignoreCase = true)) {
-                    "Android Play Services reports: [16] No credentials available on this device account."
+                    "Android Play Services reports: [16] No Google accounts available on this device."
                 } else {
                     "Google Sign-In Error: $err"
                 }
@@ -232,13 +236,42 @@ fun GoogleLoginScreen(
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = statusMessage ?: "",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.error,
-                            textAlign = TextAlign.Start,
-                            modifier = Modifier.padding(12.dp)
-                        )
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = statusMessage ?: "",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.error,
+                                textAlign = TextAlign.Start
+                            )
+
+                            if (isCancelledByPlayServices && userEmail.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Button(
+                                    onClick = { onLogin(userEmail, activeClientId) },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(40.dp)
+                                        .testTag("one_tap_login_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Continue as $userEmail",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -273,6 +306,7 @@ fun GoogleLoginScreen(
         }
     }
 }
+
 
 
 

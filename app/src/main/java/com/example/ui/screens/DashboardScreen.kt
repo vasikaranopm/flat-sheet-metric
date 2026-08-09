@@ -130,7 +130,9 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (config.isLoggedIn) "Live Sheet Synced (${config.userEmail.ifEmpty { "Vasikaranopm@gmail.com" }})" else "Initial Mode (Local Offline Record)",
+                            text = if (config.isLoggedIn) {
+                                if (config.userEmail.isNotEmpty()) "Live Sheet Synced (${config.userEmail})" else "Live Sheet Synced"
+                            } else "Initial Mode (Local Offline Record)",
                             fontSize = 12.sp,
                             color = Color.White,
                             fontWeight = FontWeight.Medium
