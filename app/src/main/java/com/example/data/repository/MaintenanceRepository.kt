@@ -111,61 +111,87 @@ class MaintenanceRepository(private val database: AppDatabase) {
 
         // 2. Try Public Google Sheet CSV Export
         try {
+            val rawInput = config.spreadsheetId.trim()
+            val sheetId = extractSpreadsheetId(rawInput)
+            val explicitGid = extractGid(rawInput)
+
+            if (sheetId.isEmpty()) {
+                return@withContext Result.failure(Exception("Spreadsheet link is missing. Please paste your Google Sheet link."))
+            }
+
+            val urlsToTry = mutableListOf<String>()
+            if (explicitGid != null) {
+                urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&gid=$explicitGid")
+            }
+            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv")
+            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=Expenses")
+            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=Expense")
+            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=July")
+            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=August")
+            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=Maintenance")
+            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=Sheet1")
+            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=Data")
+
             val client = OkHttpClient.Builder()
                 .followRedirects(true)
                 .followSslRedirects(true)
-                .connectTimeout(8, TimeUnit.SECONDS)
-                .readTimeout(8, TimeUnit.SECONDS)
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(10, TimeUnit.SECONDS)
                 .build()
 
-            val csvUrl = "https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv"
-            val request = Request.Builder()
-                .url(csvUrl)
-                .header("User-Agent", "Mozilla/5.0")
-                .build()
+            var allExpenses = mutableListOf<ExpenseRecord>()
+            var extractedTitle = config.spreadsheetTitle
+            var successfulFetch = false
+            var errorMessage: String? = null
 
-            val response = client.newCall(request).execute()
-            val statusCode = response.code
-            val body = response.body?.string() ?: ""
+            for (targetUrl in urlsToTry.distinct()) {
+                try {
+                    val request = Request.Builder().url(targetUrl).header("User-Agent", "Mozilla/5.0").build()
+                    val response = client.newCall(request).execute()
+                    val statusCode = response.code
+                    val body = response.body?.string() ?: ""
 
-            if (statusCode == 200) {
-                if (body.contains("accounts.google.com") || body.contains("ServiceLogin") || body.contains("<!DOCTYPE html>")) {
-                    return@withContext Result.failure(Exception("Access Restricted: Please open Google Sheet -> Share -> set to 'Anyone with the link can view'."))
+                    if (statusCode == 200) {
+                        if (body.contains("accounts.google.com") || body.contains("ServiceLogin") || body.contains("<!DOCTYPE html>")) {
+                            errorMessage = "Access Restricted: Please open Google Sheet -> Share -> set to 'Anyone with the link can view'."
+                            continue
+                        }
+                        successfulFetch = true
+                        val parsed = parseCsvExpenses(body)
+                        if (parsed.isNotEmpty()) {
+                            allExpenses.addAll(parsed)
+                            val firstLine = body.lines().firstOrNull() ?: ""
+                            val cellA1 = parseCsvLine(firstLine).firstOrNull()?.trim('"')?.trim() ?: ""
+                            if (cellA1.isNotBlank() && cellA1.length in 3..50 && !cellA1.contains("date", ignoreCase = true) && !cellA1.contains("particular", ignoreCase = true)) {
+                                extractedTitle = cellA1
+                            }
+                            if (targetUrl.contains("gid=") || targetUrl.contains("sheet=Expenses")) {
+                                break
+                            }
+                        }
+                    } else if (statusCode == 404) {
+                        errorMessage = "Spreadsheet Not Found (404). Please double-check your Google Sheet URL."
+                    } else if (statusCode == 403) {
+                        errorMessage = "Access Denied (403). Ensure sheet is shared as 'Anyone with the link can view'."
+                    }
+                } catch (e: Exception) {
+                    if (errorMessage == null) errorMessage = e.localizedMessage
                 }
+            }
 
-                // Perform Schema Validation
-                val lines = body.lines().filter { it.isNotBlank() }
-                if (lines.isEmpty()) {
-                    return@withContext Result.failure(Exception("Schema Mismatch Error: Google Sheet is completely empty."))
-                }
+            if (allExpenses.isNotEmpty()) {
+                val distinctExpenses = allExpenses.distinctBy { "${it.month}_${it.dateDay}_${it.particulars}_${it.amount}" }
+                    .mapIndexed { index, record -> record.copy(id = index + 1) }
 
-                // Cell A1 Title Extraction
-                var extractedTitle = config.spreadsheetTitle
-                val firstLine = lines.firstOrNull() ?: ""
-                val firstLineCols = parseCsvLine(firstLine)
-                val cellA1 = firstLineCols.firstOrNull()?.trim('"')?.trim() ?: ""
-                val lowerFirstLine = firstLine.lowercase()
-                val headerKeywordCount = listOf("particular", "amount", "date", "description", "cost", "item", "year", "month", "vendor", "payee", "balance", "s.no").count { lowerFirstLine.contains(it) }
+                database.expenseDao().clearAll()
+                database.expenseDao().insertExpenseRecords(distinctExpenses)
 
-                if (headerKeywordCount < 2 && cellA1.isNotBlank()) {
-                    extractedTitle = cellA1
-                }
-
-                val parsedExpenses = parseCsvExpenses(body)
-
-                // Save or clear expenses
-                if (parsedExpenses.isNotEmpty()) {
-                    database.expenseDao().clearAll()
-                    database.expenseDao().insertExpenseRecords(parsedExpenses)
-                }
-
-                // Calculate collections from parsed expenses if flat names exist in records
                 var flat1A = 0.0; var flat1B = 0.0
                 var flat2A = 0.0; var flat2B = 0.0
                 var flat3A = 0.0; var flat3B = 0.0
                 var foundCollections = false
 
-                for (exp in parsedExpenses) {
+                for (exp in distinctExpenses) {
                     val p = exp.particulars.lowercase()
                     if (p.contains("1a")) { flat1A += exp.amount; foundCollections = true }
                     if (p.contains("1b")) { flat1B += exp.amount; foundCollections = true }
@@ -198,13 +224,18 @@ class MaintenanceRepository(private val database: AppDatabase) {
                         lastSyncTime = System.currentTimeMillis()
                     )
                 )
-                return@withContext Result.success("Access Verified & Synced! (${parsedExpenses.size} records updated from $finalTitle)")
-            } else if (statusCode == 404) {
-                return@withContext Result.failure(Exception("Spreadsheet Not Found (404). Please double-check your Google Sheet URL."))
-            } else if (statusCode == 403) {
-                return@withContext Result.failure(Exception("Access Denied (403). Ensure sheet is shared as 'Anyone with the link can view'."))
+                return@withContext Result.success("Access Verified & Synced! (${distinctExpenses.size} live records updated)")
+            } else if (successfulFetch) {
+                val finalTitle = if (extractedTitle.isNotBlank()) extractedTitle else "Apartment Maintenance"
+                database.configDao().saveConfig(
+                    config.copy(
+                        spreadsheetTitle = finalTitle,
+                        lastSyncTime = System.currentTimeMillis()
+                    )
+                )
+                return@withContext Result.success("Google Sheet Connected ($finalTitle)")
             } else {
-                return@withContext Result.failure(Exception("Validation Failed (HTTP $statusCode). Please check sheet link permissions."))
+                return@withContext Result.failure(Exception(errorMessage ?: "Unable to fetch data from Google Sheet."))
             }
         } catch (e: Exception) {
             if (sheetId.length >= 15) {
@@ -218,14 +249,56 @@ class MaintenanceRepository(private val database: AppDatabase) {
         }
     }
 
+    private fun parseMonthAndYearFromDate(dateRaw: String, monthRaw: String, yearRaw: String): Pair<String, String> {
+        val monthFromCol = monthRaw.trim()
+        val yearFromCol = yearRaw.trim()
+
+        val combined = "$dateRaw $monthRaw $yearRaw".lowercase()
+        var parsedMonth = if (monthFromCol.isNotBlank()) monthFromCol else ""
+        var parsedYear = if (yearFromCol.isNotBlank()) yearFromCol else "2026"
+
+        if (parsedMonth.isBlank()) {
+            if (combined.contains("jan")) parsedMonth = "January"
+            else if (combined.contains("feb")) parsedMonth = "February"
+            else if (combined.contains("mar")) parsedMonth = "March"
+            else if (combined.contains("apr")) parsedMonth = "April"
+            else if (combined.contains("may")) parsedMonth = "May"
+            else if (combined.contains("jun")) parsedMonth = "June"
+            else if (combined.contains("jul")) parsedMonth = "July"
+            else if (combined.contains("aug")) parsedMonth = "August"
+            else if (combined.contains("sep")) parsedMonth = "September"
+            else if (combined.contains("oct")) parsedMonth = "October"
+            else if (combined.contains("nov")) parsedMonth = "November"
+            else if (combined.contains("dec")) parsedMonth = "December"
+            else {
+                val parts = dateRaw.split("/", "-", ".", " ")
+                if (parts.size >= 2) {
+                    val nums = parts.mapNotNull { it.toIntOrNull() }
+                    if (nums.size >= 2) {
+                        val mNum = nums.firstOrNull { it in 1..12 }
+                        if (mNum != null) {
+                            val mArray = arrayOf("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
+                            parsedMonth = mArray[mNum - 1]
+                        }
+                        val yNum = nums.firstOrNull { it in 2020..2030 || it in 24..30 }
+                        if (yNum != null) {
+                            parsedYear = if (yNum < 100) "20$yNum" else "$yNum"
+                        }
+                    }
+                }
+            }
+        }
+        if (parsedMonth.isBlank()) parsedMonth = "July"
+        return parsedMonth to parsedYear
+    }
+
     private fun parseCsvExpenses(csv: String): List<ExpenseRecord> {
         val lines = csv.lines().filter { it.isNotBlank() }
         if (lines.isEmpty()) return emptyList()
 
-        // Check if line 0 is a title line
         val firstLine = lines.first()
         val lowerFirstLine = firstLine.lowercase()
-        val headerKeywordCount0 = listOf("particular", "amount", "date", "description", "cost", "item", "year", "month", "vendor", "payee", "balance", "s.no").count { lowerFirstLine.contains(it) }
+        val headerKeywordCount0 = listOf("particular", "amount", "date", "description", "cost", "item", "year", "month", "vendor", "payee", "balance", "s.no", "sl.no", "sl", "rs", "debit", "credit").count { lowerFirstLine.contains(it) }
 
         val hasTitleRow = headerKeywordCount0 < 2 && lines.size > 1
         val headerLine = if (hasTitleRow) lines[1] else lines[0]
@@ -233,30 +306,29 @@ class MaintenanceRepository(private val database: AppDatabase) {
 
         val headerCols = parseCsvLine(headerLine).map { it.lowercase().trim('"').trim() }
 
-        // Find matching columns by header names
-        var yearCol = headerCols.indexOfFirst { it.contains("year") }
-        var monthCol = headerCols.indexOfFirst { it.contains("month") }
-        var dateCol = headerCols.indexOfFirst { it.contains("date") || it.contains("day") }
+        var yearCol = headerCols.indexOfFirst { it.contains("year") || it.contains("yr") }
+        var monthCol = headerCols.indexOfFirst { it.contains("month") || it.contains("mth") }
+        var dateCol = headerCols.indexOfFirst { it.contains("date") || it.contains("day") || it.contains("dt") || it.contains("s.no") || it.contains("sl.no") || it.contains("sl") || it.contains("no") }
         var particularsCol = headerCols.indexOfFirst {
             it.contains("particular") || it.contains("description") || it.contains("item") ||
-                    it.contains("detail") || it.contains("purpose") || it.contains("name") || it.contains("title")
+                    it.contains("detail") || it.contains("purpose") || it.contains("name") || it.contains("title") ||
+                    it.contains("expense") || it.contains("work") || it.contains("head")
         }
         var remarksCol = headerCols.indexOfFirst { it.contains("remark") || it.contains("note") || it.contains("comment") }
         var amountCol = headerCols.indexOfFirst {
             it.contains("amount") || it.contains("cost") || it.contains("price") ||
-                    it.contains("rs") || it.contains("inr") || it.contains("₹") || it.contains("spent") || it.contains("total")
+                    it.contains("rs") || it.contains("inr") || it.contains("₹") || it.contains("spent") || it.contains("total") || it.contains("debit") || it.contains("expenditure")
         }
         var vendorCol = headerCols.indexOfFirst {
             it.contains("vendor") || it.contains("payee") || it.contains("paid") || it.contains("by") || it.contains("person")
         }
-        var billCol = headerCols.indexOfFirst { it.contains("bill") || it.contains("doc") }
+        var billCol = headerCols.indexOfFirst { it.contains("bill") || it.contains("doc") || it.contains("receipt") }
         var pictureCol = headerCols.indexOfFirst { it.contains("picture") || it.contains("photo") || it.contains("image") }
         var balanceCol = headerCols.indexOfFirst { it.contains("balance") || it.contains("bal") }
         var categoryCol = headerCols.indexOfFirst { it.contains("category") || it.contains("type") || it.contains("head") }
 
         val sampleRows = dataLines.take(15).map { parseCsvLine(it) }
 
-        // Auto-detect amount column if header didn't match
         if (amountCol == -1 && sampleRows.isNotEmpty()) {
             val maxCols = sampleRows.maxOfOrNull { it.size } ?: 0
             for (colIdx in 0 until maxCols) {
@@ -272,7 +344,6 @@ class MaintenanceRepository(private val database: AppDatabase) {
             }
         }
 
-        // Auto-detect particulars column if header didn't match
         if (particularsCol == -1 && sampleRows.isNotEmpty()) {
             val maxCols = sampleRows.maxOfOrNull { it.size } ?: 0
             for (colIdx in 0 until maxCols) {
@@ -283,11 +354,10 @@ class MaintenanceRepository(private val database: AppDatabase) {
             }
         }
 
-        // Fallbacks for standard formats if still undetected
         if (particularsCol == -1) particularsCol = if (headerCols.size > 1) 1 else 0
         if (amountCol == -1) amountCol = (headerCols.size - 1).coerceAtLeast(0)
 
-        var runningBalance = 12000.0 // Default starting opening balance
+        var runningBalance = 12000.0
 
         return dataLines.mapIndexedNotNull { index, line ->
             val cols = parseCsvLine(line)
@@ -303,14 +373,22 @@ class MaintenanceRepository(private val database: AppDatabase) {
                 return str.toDoubleOrNull() ?: 0.0
             }
 
-            val amount = parseAmountVal(amountCol)
             val particulars = getVal(particularsCol).ifBlank {
                 cols.firstOrNull { it.isNotBlank() && parseAmountVal(cols.indexOf(it)) == 0.0 }?.trim('"') ?: "Expense Item #${index + 1}"
             }
 
-            val dateStr = getVal(dateCol).ifBlank { "01" }
-            val monthStr = getVal(monthCol).ifBlank { "July" }
-            val yearStr = getVal(yearCol).ifBlank { "2026" }
+            val pLower = particulars.lowercase()
+            if (pLower.contains("total") || pLower.contains("subtotal") || pLower.contains("closing balance") || pLower.contains("opening balance") || pLower.contains("balance b/f") || pLower.contains("balance c/f")) {
+                return@mapIndexedNotNull null
+            }
+
+            val amount = parseAmountVal(amountCol)
+            val dateRaw = getVal(dateCol).ifBlank { "01" }
+            val monthRaw = getVal(monthCol)
+            val yearRaw = getVal(yearCol)
+
+            val (monthStr, yearStr) = parseMonthAndYearFromDate(dateRaw, monthRaw, yearRaw)
+
             val categoryStr = getVal(categoryCol).ifBlank {
                 if (particulars.contains("clean", ignoreCase = true) || particulars.contains("sweep", ignoreCase = true)) "Cleaning"
                 else if (particulars.contains("motor", ignoreCase = true) || particulars.contains("sensor", ignoreCase = true) || particulars.contains("alter", ignoreCase = true)) "Alteration/Additional work"
@@ -333,7 +411,7 @@ class MaintenanceRepository(private val database: AppDatabase) {
                 id = index + 1,
                 year = yearStr,
                 month = monthStr,
-                dateDay = dateStr,
+                dateDay = dateRaw,
                 particulars = particulars,
                 remarks = remarksStr,
                 amount = amount,

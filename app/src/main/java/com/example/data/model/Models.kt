@@ -93,6 +93,13 @@ fun extractSpreadsheetId(input: String): String {
     return match?.groupValues?.get(1) ?: trimmed
 }
 
+fun extractGid(input: String): String? {
+    val trimmed = input.trim()
+    val pattern = Regex("[?&#]gid=([0-9]+)")
+    val match = pattern.find(trimmed)
+    return match?.groupValues?.get(1)
+}
+
 fun getDefaultSheetLinkEnv(): String {
     return try {
         val link = com.example.BuildConfig.DEFAULT_SHEET_LINK

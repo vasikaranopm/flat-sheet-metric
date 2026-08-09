@@ -144,11 +144,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
 
         viewModelScope.launch {
-            repository.googleSheetConfig.collect { config ->
-                val sheetId = config?.spreadsheetId ?: extractSpreadsheetId(getDefaultSheetLinkEnv())
-                if (sheetId.isNotBlank() && (config == null || config.lastSyncTime == 0L)) {
-                    triggerSync()
-                }
+            val config = repository.googleSheetConfig.firstOrNull()
+            val sheetId = config?.spreadsheetId?.ifBlank { extractSpreadsheetId(getDefaultSheetLinkEnv()) } ?: extractSpreadsheetId(getDefaultSheetLinkEnv())
+            if (sheetId.isNotBlank()) {
+                triggerSync()
             }
         }
     }
