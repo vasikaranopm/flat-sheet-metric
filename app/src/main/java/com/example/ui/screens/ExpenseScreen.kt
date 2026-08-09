@@ -34,16 +34,24 @@ fun ExpenseScreen(
     expenses: List<ExpenseRecord>,
     searchQuery: String,
     selectedCategory: String,
+    selectedMonth: String = "All Months",
     onSearchQueryChanged: (String) -> Unit,
     onCategorySelected: (String) -> Unit,
+    onMonthSelected: (String) -> Unit = {},
+    allExpensesForMonths: List<ExpenseRecord> = expenses,
     onAddExpense: ((particulars: String, amount: Double, category: String, vendor: String, day: String, remarks: String) -> Unit)? = null,
     onDeleteExpense: ((Int) -> Unit)? = null,
     onNavigateBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val categories = remember(expenses) {
-        val uniqueCats = expenses.map { it.category }.filter { it.isNotBlank() }.distinct()
+    val categories = remember(allExpensesForMonths) {
+        val uniqueCats = allExpensesForMonths.map { it.category }.filter { it.isNotBlank() }.distinct()
         listOf("All") + if (uniqueCats.isEmpty()) listOf("Cleaning", "Alteration/Additional work", "Common Purchases") else uniqueCats
+    }
+
+    val availableMonths = remember(allExpensesForMonths) {
+        val uniqueMonths = allExpensesForMonths.map { it.month }.filter { it.isNotBlank() }.distinct()
+        listOf("All Months") + if (uniqueMonths.isEmpty()) listOf("July", "August") else uniqueMonths
     }
 
     val totalExpenseSum = expenses.sumOf { it.amount }
@@ -139,19 +147,67 @@ fun ExpenseScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(vertical = 4.dp)
+                // Month Filter Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(categories) { cat ->
-                        FilterChip(
-                            selected = (selectedCategory == cat),
-                            onClick = { onCategorySelected(cat) },
-                            label = { Text(cat, fontSize = 12.sp) },
-                            leadingIcon = if (selectedCategory == cat) {
-                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                            } else null
-                        )
+                    Text(
+                        text = "Month:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(end = 6.dp)
+                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding = PaddingValues(vertical = 2.dp)
+                    ) {
+                        items(availableMonths) { m ->
+                            FilterChip(
+                                selected = (selectedMonth == m),
+                                onClick = { onMonthSelected(m) },
+                                label = { Text(m, fontSize = 11.sp, fontWeight = if (selectedMonth == m) FontWeight.Bold else FontWeight.Normal) },
+                                leadingIcon = if (selectedMonth == m) {
+                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                                } else null,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Amber500,
+                                    selectedLabelColor = Color.Black
+                                )
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Category Filter Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Category:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(end = 6.dp)
+                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding = PaddingValues(vertical = 2.dp)
+                    ) {
+                        items(categories) { cat ->
+                            FilterChip(
+                                selected = (selectedCategory == cat),
+                                onClick = { onCategorySelected(cat) },
+                                label = { Text(cat, fontSize = 11.sp) },
+                                leadingIcon = if (selectedCategory == cat) {
+                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                                } else null
+                            )
+                        }
                     }
                 }
             }

@@ -35,6 +35,7 @@ data class MainUiState(
     val config: GoogleSheetConfig = GoogleSheetConfig(),
     val searchQuery: String = "",
     val selectedCategoryFilter: String = "All",
+    val selectedMonthFilter: String = "All Months",
     val isLoading: Boolean = false,
     val syncMessage: String? = null
 )
@@ -45,6 +46,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _searchQuery = MutableStateFlow("")
     private val _selectedCategory = MutableStateFlow("All")
+    private val _selectedMonth = MutableStateFlow("All Months")
     private val _syncMessage = MutableStateFlow<String?>(null)
     private val _isLoading = MutableStateFlow(false)
 
@@ -102,24 +104,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
+        data class FilterState(val query: String, val category: String, val month: String)
+        val filterFlow = combine(_searchQuery, _selectedCategory, _selectedMonth) { q, c, m ->
+            FilterState(q, c, m)
+        }
+
+        val statusFlow = combine(_syncMessage, _isLoading) { msg, loading ->
+            msg to loading
+        }
+
         uiState = combine(
             baseDataFlow,
-            _searchQuery,
-            _selectedCategory,
-            _syncMessage,
-            _isLoading
-        ) { state, query, category, msg, loading ->
+            filterFlow,
+            statusFlow
+        ) { state, filter, status ->
+            val (msg, loading) = status
             val filtered = state.expenses.filter { record ->
-                val matchesCat = (category == "All" || record.category.equals(category, ignoreCase = true))
-                val matchesQuery = query.isEmpty() ||
-                        record.particulars.contains(query, ignoreCase = true) ||
-                        record.vendorPayee.contains(query, ignoreCase = true) ||
-                        record.remarks.contains(query, ignoreCase = true)
-                matchesCat && matchesQuery
+                val matchesCat = (filter.category == "All" || record.category.equals(filter.category, ignoreCase = true))
+                val matchesMonth = (filter.month == "All Months" || record.month.equals(filter.month, ignoreCase = true))
+                val matchesQuery = filter.query.isEmpty() ||
+                        record.particulars.contains(filter.query, ignoreCase = true) ||
+                        record.vendorPayee.contains(filter.query, ignoreCase = true) ||
+                        record.remarks.contains(filter.query, ignoreCase = true) ||
+                        record.month.contains(filter.query, ignoreCase = true)
+                matchesCat && matchesMonth && matchesQuery
             }
             state.copy(
-                searchQuery = query,
-                selectedCategoryFilter = category,
+                searchQuery = filter.query,
+                selectedCategoryFilter = filter.category,
+                selectedMonthFilter = filter.month,
                 filteredExpenses = filtered,
                 syncMessage = msg,
                 isLoading = loading
@@ -146,6 +159,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun onCategoryFilterSelected(category: String) {
         _selectedCategory.value = category
+    }
+
+    fun onMonthFilterSelected(month: String) {
+        _selectedMonth.value = month
     }
 
     fun triggerSync() {

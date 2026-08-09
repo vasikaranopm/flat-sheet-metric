@@ -150,8 +150,11 @@ class MainActivity : ComponentActivity() {
                                     expenses = uiState.filteredExpenses,
                                     searchQuery = uiState.searchQuery,
                                     selectedCategory = uiState.selectedCategoryFilter,
+                                    selectedMonth = uiState.selectedMonthFilter,
+                                    allExpensesForMonths = uiState.expenses,
                                     onSearchQueryChanged = { viewModel.onSearchQueryChanged(it) },
                                     onCategorySelected = { viewModel.onCategoryFilterSelected(it) },
+                                    onMonthSelected = { viewModel.onMonthFilterSelected(it) },
                                     onAddExpense = { particulars, amount, category, vendor, day, remarks ->
                                         viewModel.addExpense(particulars, amount, category, vendor, day, remarks = remarks)
                                     },
