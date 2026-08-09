@@ -54,13 +54,11 @@ fun GoogleLoginScreen(
     val activeClientId = webClientId.ifEmpty { secretClientId.ifEmpty { defaultWebClientId } }
 
     var statusMessage by remember { mutableStateOf<String?>(null) }
-    var isCancelledByPlayServices by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
-    var manualEmailInput by remember { mutableStateOf(userEmail) }
-    var showManualEmailInput by remember { mutableStateOf(false) }
+    var isRetryingBasic by remember { mutableStateOf(false) }
 
-    // Legacy Google Sign-In Launcher (play-services-auth)
-    val googleSignInLauncher = rememberLauncherForActivityResult(
+    // Basic Google Sign-In Launcher (Fallback when ID Token request fails)
+    val basicSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         isLoading = false
@@ -71,48 +69,65 @@ fun GoogleLoginScreen(
             if (!email.isNullOrEmpty()) {
                 onLogin(email, activeClientId)
             } else {
-                statusMessage = "Google Sign-In prompt closed. Enter your email below to continue."
-                isCancelledByPlayServices = true
-                showManualEmailInput = true
+                statusMessage = "Google Sign-In was not completed. Please try again."
             }
         } catch (e: ApiException) {
-            Log.e("GoogleLoginScreen", "GoogleSignIn failed with code ${e.statusCode}", e)
-            // If code 12500, 10, or 8 (OAuth ID token or SHA1 mismatch), retry with basic email sign-in
-            if (e.statusCode == 12500 || e.statusCode == 10 || e.statusCode == 8) {
-                try {
-                    val basicGso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                        .requestEmail()
-                        .build()
-                    val client = GoogleSignIn.getClient(context, basicGso)
-                    // If lastSignedInAccount exists, use it
-                    val existingAccount = GoogleSignIn.getLastSignedInAccount(context)
-                    if (existingAccount?.email != null) {
-                        onLogin(existingAccount.email!!, activeClientId)
-                        return@rememberLauncherForActivityResult
-                    }
-                } catch (ex: Exception) {
-                    Log.e("GoogleLoginScreen", "Error checking last signed in account", ex)
-                }
+            Log.e("GoogleLoginScreen", "Basic GoogleSignIn failed with code ${e.statusCode}", e)
+            val lastAccount = GoogleSignIn.getLastSignedInAccount(context)
+            if (lastAccount?.email != null) {
+                onLogin(lastAccount.email!!, activeClientId)
+            } else if (userEmail.isNotEmpty()) {
+                onLogin(userEmail, activeClientId)
+            } else {
+                statusMessage = "Google Sign-In prompt closed or canceled (Error ${e.statusCode}). Please try again."
             }
-            isCancelledByPlayServices = true
-            showManualEmailInput = true
-            statusMessage = "Google Sign-In prompt closed by Play Services. You can enter your email address directly below to proceed."
         }
     }
 
-    fun performGoogleSignIn() {
-        isLoading = true
-        statusMessage = null
-        isCancelledByPlayServices = false
-
-        // Check if user is already signed in via GoogleSignIn
-        val lastAccount = GoogleSignIn.getLastSignedInAccount(context)
-        if (lastAccount?.email != null) {
-            isLoading = false
-            onLogin(lastAccount.email!!, activeClientId)
-            return
+    // Standard Google Sign-In Launcher
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        try {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            val account = task.getResult(ApiException::class.java)
+            val email = account?.email
+            if (!email.isNullOrEmpty()) {
+                isLoading = false
+                onLogin(email, activeClientId)
+            } else {
+                // Fallback to basic sign-in if email empty
+                val basicGso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                    .requestEmail()
+                    .build()
+                val client = GoogleSignIn.getClient(context, basicGso)
+                basicSignInLauncher.launch(client.signInIntent)
+            }
+        } catch (e: ApiException) {
+            Log.e("GoogleLoginScreen", "GoogleSignIn ID Token failed with code ${e.statusCode}", e)
+            // On Play Services error code 12500, 10, or 12501, try basic email sign-in immediately
+            try {
+                val basicGso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                    .requestEmail()
+                    .build()
+                val client = GoogleSignIn.getClient(context, basicGso)
+                val lastAccount = GoogleSignIn.getLastSignedInAccount(context)
+                if (lastAccount?.email != null) {
+                    isLoading = false
+                    onLogin(lastAccount.email!!, activeClientId)
+                } else {
+                    isRetryingBasic = true
+                    basicSignInLauncher.launch(client.signInIntent)
+                }
+            } catch (ex: Exception) {
+                Log.e("GoogleLoginScreen", "Basic sign-in launcher error", ex)
+                isLoading = false
+                statusMessage = "Google Sign-In failed (Code ${e.statusCode}). Tap 'Sign in with Google' to try again."
+            }
         }
+    }
 
+    fun launchGoogleSignInClient() {
         try {
             val gsoBuilder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail()
@@ -120,16 +135,60 @@ fun GoogleLoginScreen(
                 gsoBuilder.requestIdToken(activeClientId)
             }
             val googleSignInClient = GoogleSignIn.getClient(context, gsoBuilder.build())
-            // Sign out first to force account selection dialog
-            googleSignInClient.signOut().addOnCompleteListener {
-                googleSignInLauncher.launch(googleSignInClient.signInIntent)
-            }
+            googleSignInLauncher.launch(googleSignInClient.signInIntent)
         } catch (e: Exception) {
-            Log.e("GoogleLoginScreen", "Failed to launch Google Sign In", e)
-            showManualEmailInput = true
-            isCancelledByPlayServices = true
-            statusMessage = "Enter your Google email address below to log in."
+            Log.e("GoogleLoginScreen", "Failed to launch Google Sign-In client", e)
             isLoading = false
+            statusMessage = "Unable to launch Google Sign-In: ${e.localizedMessage}"
+        }
+    }
+
+    fun performGoogleSignIn() {
+        isLoading = true
+        statusMessage = null
+
+        // If user already signed in previously on Play Services, reuse account
+        val lastAccount = GoogleSignIn.getLastSignedInAccount(context)
+        if (lastAccount?.email != null) {
+            isLoading = false
+            onLogin(lastAccount.email!!, activeClientId)
+            return
+        }
+
+        // Try Credential Manager first, then GoogleSignIn
+        coroutineScope.launch {
+            try {
+                val credentialManager = CredentialManager.create(context)
+                val googleIdOption = GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setServerClientId(activeClientId)
+                    .setAutoSelectEnabled(false)
+                    .build()
+
+                val request = GetCredentialRequest.Builder()
+                    .addCredentialOption(googleIdOption)
+                    .build()
+
+                val result = credentialManager.getCredential(
+                    context = context,
+                    request = request
+                )
+
+                val credential = result.credential
+                if (credential is CustomCredential &&
+                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+                ) {
+                    val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                    val email = googleIdTokenCredential.id
+                    isLoading = false
+                    onLogin(email, activeClientId)
+                } else {
+                    launchGoogleSignInClient()
+                }
+            } catch (e: Exception) {
+                Log.w("GoogleLoginScreen", "CredentialManager failed, falling back to GoogleSignInClient", e)
+                launchGoogleSignInClient()
+            }
         }
     }
 
@@ -202,7 +261,7 @@ fun GoogleLoginScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Primary Google Sign-In Button
+                // Primary Google Sign-In Button ONLY
                 Button(
                     onClick = { performGoogleSignIn() },
                     enabled = !isLoading,
@@ -258,75 +317,11 @@ fun GoogleLoginScreen(
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text(
                                 text = statusMessage ?: "",
-                                fontSize = 11.sp,
+                                fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.error,
                                 textAlign = TextAlign.Start
                             )
                         }
-                    }
-                }
-
-                if (showManualEmailInput || isCancelledByPlayServices) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    OutlinedTextField(
-                        value = manualEmailInput,
-                        onValueChange = { manualEmailInput = it },
-                        label = { Text("Google Account Email") },
-                        placeholder = { Text("your.email@gmail.com") },
-                        singleLine = true,
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Email,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("manual_email_input_field")
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Button(
-                        onClick = {
-                            if (manualEmailInput.isNotBlank()) {
-                                onLogin(manualEmailInput.trim(), activeClientId)
-                            }
-                        },
-                        enabled = manualEmailInput.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .testTag("one_tap_login_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (manualEmailInput.isBlank()) "Enter Email to Continue" else "Continue as ${manualEmailInput.trim()}",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                } else {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    TextButton(
-                        onClick = { showManualEmailInput = true }
-                    ) {
-                        Text(
-                            text = "Or enter Google email manually",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
                     }
                 }
 
@@ -361,6 +356,7 @@ fun GoogleLoginScreen(
         }
     }
 }
+
 
 
 

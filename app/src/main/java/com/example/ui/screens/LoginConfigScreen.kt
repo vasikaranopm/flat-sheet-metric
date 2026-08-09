@@ -32,6 +32,15 @@ fun LoginConfigScreen(
     var emailInput by remember(config.userEmail) { mutableStateOf(config.userEmail) }
     var webClientIdInput by remember(config.webClientId) { mutableStateOf(config.webClientId) }
     var spreadsheetIdInput by remember(config.spreadsheetId) { mutableStateOf(config.spreadsheetId) }
+    var sheetLinkInput by remember(config.spreadsheetId) {
+        mutableStateOf(
+            if (config.spreadsheetId.isNotBlank() && !config.spreadsheetId.startsWith("http")) {
+                "https://docs.google.com/spreadsheets/d/${config.spreadsheetId}/edit"
+            } else {
+                config.spreadsheetId
+            }
+        )
+    }
     var apiKeyInput by remember(config.apiKey) { mutableStateOf(config.apiKey) }
     var serviceAccountInput by remember(config.serviceAccountEmail) { mutableStateOf(config.serviceAccountEmail) }
     var gcpProjectInput by remember(config.gcpProjectId) { mutableStateOf(config.gcpProjectId) }
@@ -204,9 +213,9 @@ fun LoginConfigScreen(
                         .fillMaxWidth()
                         .testTag("edit_gcp_config_button")
                 ) {
-                    Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Configure Google Sheet Parameters")
+                    Text("Configure Google Sheet Link")
                 }
             }
         }
@@ -233,51 +242,38 @@ fun LoginConfigScreen(
     if (showGcpSetupModal) {
         AlertDialog(
             onDismissRequest = { showGcpSetupModal = false },
-            title = { Text("Google Sheet & GCP Config") },
+            title = { Text("Google Sheet Link") },
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        "Enter your Google Sheet parameters:",
+                        "Paste your Google Sheet link or Spreadsheet ID below:",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
                     OutlinedTextField(
-                        value = spreadsheetIdInput,
-                        onValueChange = { spreadsheetIdInput = it },
-                        label = { Text("Spreadsheet ID") },
+                        value = sheetLinkInput,
+                        onValueChange = { sheetLinkInput = it },
+                        label = { Text("Google Sheet Link / URL") },
+                        placeholder = { Text("https://docs.google.com/spreadsheets/d/...") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = gcpProjectInput,
-                        onValueChange = { gcpProjectInput = it },
-                        label = { Text("GCP Project ID") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = serviceAccountInput,
-                        onValueChange = { serviceAccountInput = it },
-                        label = { Text("Service Account Email") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = apiKeyInput,
-                        onValueChange = { apiKeyInput = it },
-                        label = { Text("Optional Google API Key") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        leadingIcon = {
+                            Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(20.dp))
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("sheet_url_input_field")
                     )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
+                        val extractedId = extractSpreadsheetId(sheetLinkInput)
+                        spreadsheetIdInput = extractedId
                         onSaveGcpConfig(
-                            spreadsheetIdInput,
+                            extractedId,
                             apiKeyInput,
                             gcpProjectInput,
                             serviceAccountInput,
@@ -287,7 +283,7 @@ fun LoginConfigScreen(
                         showGcpSetupModal = false
                     }
                 ) {
-                    Text("Save Config")
+                    Text("Save Link")
                 }
             },
             dismissButton = {
@@ -297,4 +293,11 @@ fun LoginConfigScreen(
             }
         )
     }
+}
+
+private fun extractSpreadsheetId(input: String): String {
+    val trimmed = input.trim()
+    val pattern = Regex("/spreadsheets/d/([a-zA-Z0-9-_]+)")
+    val match = pattern.find(trimmed)
+    return match?.groupValues?.get(1) ?: trimmed
 }
