@@ -142,7 +142,7 @@ fun DashboardScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Gomathi Ilam Thendral",
+                                text = config.spreadsheetTitle.ifBlank { "Apartment Maintenance" },
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White

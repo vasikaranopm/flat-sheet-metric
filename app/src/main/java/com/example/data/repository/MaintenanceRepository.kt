@@ -139,28 +139,66 @@ class MaintenanceRepository(private val database: AppDatabase) {
                     return@withContext Result.failure(Exception("Schema Mismatch Error: Google Sheet is completely empty."))
                 }
 
-                val headerLine = lines.firstOrNull() ?: ""
-                val headerCols = parseCsvLine(headerLine).map { it.lowercase().trim('"') }
+                // Cell A1 Title Extraction
+                var extractedTitle = config.spreadsheetTitle
+                val firstLine = lines.firstOrNull() ?: ""
+                val firstLineCols = parseCsvLine(firstLine)
+                val cellA1 = firstLineCols.firstOrNull()?.trim('"')?.trim() ?: ""
+                val lowerFirstLine = firstLine.lowercase()
+                val headerKeywordCount = listOf("particular", "amount", "date", "description", "cost", "item", "year", "month", "vendor", "payee", "balance", "s.no").count { lowerFirstLine.contains(it) }
 
-                // Verify basic column count or header relevance
-                if (headerCols.size < 3) {
-                    return@withContext Result.failure(Exception("Schema Mismatch Error: Sheet must have at least 3 columns (e.g. Particulars, Amount, Date). Found ${headerCols.size} columns."))
+                if (headerKeywordCount < 2 && cellA1.isNotBlank()) {
+                    extractedTitle = cellA1
                 }
 
                 val parsedExpenses = parseCsvExpenses(body)
-                if (parsedExpenses.isEmpty() && lines.size > 1) {
-                    return@withContext Result.failure(Exception("Schema Mismatch Error: Could not parse expense records. Please ensure your sheet has columns for Date/Particulars/Amount."))
-                }
 
+                // Save or clear expenses
                 if (parsedExpenses.isNotEmpty()) {
                     database.expenseDao().clearAll()
                     database.expenseDao().insertExpenseRecords(parsedExpenses)
                 }
 
+                // Calculate collections from parsed expenses if flat names exist in records
+                var flat1A = 0.0; var flat1B = 0.0
+                var flat2A = 0.0; var flat2B = 0.0
+                var flat3A = 0.0; var flat3B = 0.0
+                var foundCollections = false
+
+                for (exp in parsedExpenses) {
+                    val p = exp.particulars.lowercase()
+                    if (p.contains("1a")) { flat1A += exp.amount; foundCollections = true }
+                    if (p.contains("1b")) { flat1B += exp.amount; foundCollections = true }
+                    if (p.contains("2a")) { flat2A += exp.amount; foundCollections = true }
+                    if (p.contains("2b")) { flat2B += exp.amount; foundCollections = true }
+                    if (p.contains("3a")) { flat3A += exp.amount; foundCollections = true }
+                    if (p.contains("3b")) { flat3B += exp.amount; foundCollections = true }
+                }
+
+                if (foundCollections) {
+                    val total = flat1A + flat1B + flat2A + flat2B + flat3A + flat3B
+                    database.collectionDao().insertCollectionRecord(
+                        CollectionRecord(
+                            id = 1,
+                            flat1AAmount = flat1A,
+                            flat1BAmount = flat1B,
+                            flat2AAmount = flat2A,
+                            flat2BAmount = flat2B,
+                            flat3AAmount = flat3A,
+                            flat3BAmount = flat3B,
+                            totalAmount = if (total > 0) total else 12000.0
+                        )
+                    )
+                }
+
+                val finalTitle = if (extractedTitle.isNotBlank()) extractedTitle else "Apartment Maintenance"
                 database.configDao().saveConfig(
-                    config.copy(lastSyncTime = System.currentTimeMillis())
+                    config.copy(
+                        spreadsheetTitle = finalTitle,
+                        lastSyncTime = System.currentTimeMillis()
+                    )
                 )
-                return@withContext Result.success("Access Verified & Synced! (${parsedExpenses.size} records updated from live Google Sheet)")
+                return@withContext Result.success("Access Verified & Synced! (${parsedExpenses.size} records updated from $finalTitle)")
             } else if (statusCode == 404) {
                 return@withContext Result.failure(Exception("Spreadsheet Not Found (404). Please double-check your Google Sheet URL."))
             } else if (statusCode == 403) {
@@ -182,9 +220,17 @@ class MaintenanceRepository(private val database: AppDatabase) {
 
     private fun parseCsvExpenses(csv: String): List<ExpenseRecord> {
         val lines = csv.lines().filter { it.isNotBlank() }
-        if (lines.size <= 1) return emptyList()
+        if (lines.isEmpty()) return emptyList()
 
-        val headerLine = lines.first()
+        // Check if line 0 is a title line
+        val firstLine = lines.first()
+        val lowerFirstLine = firstLine.lowercase()
+        val headerKeywordCount0 = listOf("particular", "amount", "date", "description", "cost", "item", "year", "month", "vendor", "payee", "balance", "s.no").count { lowerFirstLine.contains(it) }
+
+        val hasTitleRow = headerKeywordCount0 < 2 && lines.size > 1
+        val headerLine = if (hasTitleRow) lines[1] else lines[0]
+        val dataLines = if (hasTitleRow) lines.drop(2) else lines.drop(1)
+
         val headerCols = parseCsvLine(headerLine).map { it.lowercase().trim('"').trim() }
 
         // Find matching columns by header names
@@ -208,7 +254,7 @@ class MaintenanceRepository(private val database: AppDatabase) {
         var balanceCol = headerCols.indexOfFirst { it.contains("balance") || it.contains("bal") }
         var categoryCol = headerCols.indexOfFirst { it.contains("category") || it.contains("type") || it.contains("head") }
 
-        val sampleRows = lines.drop(1).take(15).map { parseCsvLine(it) }
+        val sampleRows = dataLines.take(15).map { parseCsvLine(it) }
 
         // Auto-detect amount column if header didn't match
         if (amountCol == -1 && sampleRows.isNotEmpty()) {
@@ -243,7 +289,7 @@ class MaintenanceRepository(private val database: AppDatabase) {
 
         var runningBalance = 12000.0 // Default starting opening balance
 
-        return lines.drop(1).mapIndexedNotNull { index, line ->
+        return dataLines.mapIndexedNotNull { index, line ->
             val cols = parseCsvLine(line)
             if (cols.isEmpty() || cols.all { it.isBlank() }) return@mapIndexedNotNull null
 

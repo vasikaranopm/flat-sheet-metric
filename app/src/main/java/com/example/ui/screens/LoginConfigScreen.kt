@@ -95,7 +95,7 @@ fun LoginConfigScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "Gomathi Ilam Thendral",
+            text = config.spreadsheetTitle.ifBlank { "Apartment Maintenance" },
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground

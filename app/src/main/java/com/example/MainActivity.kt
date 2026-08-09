@@ -132,7 +132,12 @@ class MainActivity : ComponentActivity() {
                                     isLoading = uiState.isLoading,
                                     syncMessage = uiState.syncMessage,
                                     onTriggerSync = { viewModel.triggerSync() },
-                                    onLogout = { viewModel.logout(context) },
+                                    onLogout = {
+                                        viewModel.logout(context)
+                                        navController.navigate("login_config") {
+                                            popUpTo("dashboard") { inclusive = true }
+                                        }
+                                    },
                                     onNavigateToExpenses = { navController.navigate("expenses") },
                                     onNavigateToYearlyReport = { navController.navigate("yearly_report") },
                                     onNavigateToContacts = { navController.navigate("contacts") },
