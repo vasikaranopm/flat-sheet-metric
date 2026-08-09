@@ -186,6 +186,31 @@ class MaintenanceRepository(private val database: AppDatabase) {
                 database.expenseDao().clearAll()
                 database.expenseDao().insertExpenseRecords(distinctExpenses)
 
+                // 1. Dynamic Yearly Categories
+                val categoriesMap = distinctExpenses.groupBy { it.category }
+                val categoryRecords = categoriesMap.map { (catName, list) ->
+                    YearlyExpenseCategory(
+                        category = catName.ifBlank { "General" },
+                        amount2026 = list.sumOf { it.amount }
+                    )
+                }
+                database.yearlyReportDao().clearCategories()
+                database.yearlyReportDao().insertExpenseCategories(categoryRecords)
+
+                // 2. Dynamic Major Capital Works
+                val majorKeywords = listOf("sensor", "motor", "alteration", "repair", "paint", "replace", "plumbing", "electrical", "tank", "clean", "work", "purchase", "installation", "service")
+                val majorWorkRecords = distinctExpenses.filter { exp ->
+                    exp.amount >= 1000 || majorKeywords.any { exp.particulars.contains(it, ignoreCase = true) || exp.category.contains(it, ignoreCase = true) }
+                }.map { exp ->
+                    MajorWork(
+                        description = exp.particulars,
+                        amount2026 = exp.amount
+                    )
+                }
+                database.yearlyReportDao().clearMajorWorks()
+                database.yearlyReportDao().insertMajorWorks(majorWorkRecords)
+
+                // 3. Dynamic Flat Collections & Yearly Contributions
                 var flat1A = 0.0; var flat1B = 0.0
                 var flat2A = 0.0; var flat2B = 0.0
                 var flat3A = 0.0; var flat3B = 0.0
@@ -201,21 +226,64 @@ class MaintenanceRepository(private val database: AppDatabase) {
                     if (p.contains("3b")) { flat3B += exp.amount; foundCollections = true }
                 }
 
-                if (foundCollections) {
-                    val total = flat1A + flat1B + flat2A + flat2B + flat3A + flat3B
-                    database.collectionDao().insertCollectionRecord(
-                        CollectionRecord(
-                            id = 1,
-                            flat1AAmount = flat1A,
-                            flat1BAmount = flat1B,
-                            flat2AAmount = flat2A,
-                            flat2BAmount = flat2B,
-                            flat3AAmount = flat3A,
-                            flat3BAmount = flat3B,
-                            totalAmount = if (total > 0) total else 12000.0
+                val flatContributions = mutableListOf<YearlyContribution>()
+                val flatsList = listOf("1A" to flat1A, "1B" to flat1B, "2A" to flat2A, "2B" to flat2B, "3A" to flat3A, "3B" to flat3B)
+
+                for ((fNo, amt) in flatsList) {
+                    val calculatedAmt = if (amt > 0) amt else 2000.0
+                    flatContributions.add(YearlyContribution(flatNo = fNo, residentName = "Flat $fNo", amount2026 = calculatedAmt))
+                }
+
+                val totalCollectedVal = flatContributions.sumOf { it.amount2026 }
+
+                database.collectionDao().insertCollectionRecord(
+                    CollectionRecord(
+                        id = 1,
+                        flat1AAmount = flatContributions.firstOrNull { it.flatNo == "1A" }?.amount2026 ?: 2000.0,
+                        flat1BAmount = flatContributions.firstOrNull { it.flatNo == "1B" }?.amount2026 ?: 2000.0,
+                        flat2AAmount = flatContributions.firstOrNull { it.flatNo == "2A" }?.amount2026 ?: 2000.0,
+                        flat2BAmount = flatContributions.firstOrNull { it.flatNo == "2B" }?.amount2026 ?: 2000.0,
+                        flat3AAmount = flatContributions.firstOrNull { it.flatNo == "3A" }?.amount2026 ?: 2000.0,
+                        flat3BAmount = flatContributions.firstOrNull { it.flatNo == "3B" }?.amount2026 ?: 2000.0,
+                        totalAmount = totalCollectedVal
+                    )
+                )
+
+                database.yearlyReportDao().clearContributions()
+                database.yearlyReportDao().insertContributions(flatContributions)
+
+                // 4. Dynamic Contacts (Owners & Vendors/Services)
+                val extractedServices = distinctExpenses
+                    .filter { it.vendorPayee.isNotBlank() && it.vendorPayee != "--" && it.vendorPayee != "N/A" }
+                    .distinctBy { it.vendorPayee }
+                    .map { exp ->
+                        ServiceContact(
+                            serviceType = exp.category.ifBlank { "Maintenance Service" },
+                            contactPerson = exp.vendorPayee,
+                            phoneNo = "--",
+                            remarks = "Service Vendor for ${exp.particulars}"
                         )
+                    }
+
+                val defaultServiceTypes = listOf(
+                    ServiceContact("Cleaning & Sanitation", "Housekeeping Vendor", "--", "Common Area Housekeeping"),
+                    ServiceContact("Motor & Electrical", "Electrical Technician", "--", "Water Sensor & Pump Maintenance"),
+                    ServiceContact("Plumbing & Lines", "Plumbing Technician", "--", "Common Plumbing Works")
+                )
+
+                database.contactsDao().clearServices()
+                database.contactsDao().insertServiceContacts(if (extractedServices.isNotEmpty()) extractedServices else defaultServiceTypes)
+
+                val extractedOwners = listOf("1A", "1B", "2A", "2B", "3A", "3B").map { flat ->
+                    OwnerContact(
+                        flatNo = flat,
+                        residentName = "Flat $flat Resident",
+                        primaryContactNo = "--",
+                        emergencyContactNo = ""
                     )
                 }
+                database.contactsDao().clearOwners()
+                database.contactsDao().insertOwnerContacts(extractedOwners)
 
                 val finalTitle = if (extractedTitle.isNotBlank()) extractedTitle else "Apartment Maintenance"
                 database.configDao().saveConfig(

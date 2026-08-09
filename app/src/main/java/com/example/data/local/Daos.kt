@@ -56,6 +56,15 @@ interface YearlyReportDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMajorWorks(works: List<MajorWork>)
+
+    @Query("DELETE FROM yearly_contributions")
+    suspend fun clearContributions()
+
+    @Query("DELETE FROM yearly_expense_categories")
+    suspend fun clearCategories()
+
+    @Query("DELETE FROM major_works")
+    suspend fun clearMajorWorks()
 }
 
 @Dao
@@ -71,6 +80,12 @@ interface ContactsDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertServiceContacts(contacts: List<ServiceContact>)
+
+    @Query("DELETE FROM owner_contacts")
+    suspend fun clearOwners()
+
+    @Query("DELETE FROM service_contacts")
+    suspend fun clearServices()
 }
 
 @Dao

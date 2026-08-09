@@ -413,7 +413,7 @@ fun DashboardScreen(
                         Icon(Icons.Default.Info, contentDescription = null, tint = Slate700, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Particulars: ₹1,000 Regular Maintenance + ₹1,000 Motor Sensor Contribution = ₹2,000 per flat",
+                            text = "Live Record Book Sync • Total Fund Collections: ₹${totalCollected.toInt()} • Total Spent: ₹${totalSpent.toInt()}",
                             fontSize = 11.sp,
                             color = Slate800
                         )

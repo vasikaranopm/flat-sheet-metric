@@ -71,9 +71,9 @@ abstract class AppDatabase : RoomDatabase() {
                             populateInitialData(database)
                         } else {
                             val updatedConfig = if (currentConfig.spreadsheetId.isBlank() && defaultSheetId.isNotBlank()) {
-                                currentConfig.copy(spreadsheetId = defaultSheetId, userEmail = "", isLoggedIn = false)
+                                currentConfig.copy(spreadsheetId = defaultSheetId, userEmail = "", isLoggedIn = true)
                             } else {
-                                currentConfig.copy(userEmail = "", isLoggedIn = false)
+                                currentConfig.copy(userEmail = "", isLoggedIn = true)
                             }
                             database.configDao().saveConfig(updatedConfig)
                         }
@@ -95,7 +95,7 @@ abstract class AppDatabase : RoomDatabase() {
                     apiKey = "",
                     webClientId = "",
                     userEmail = "",
-                    isLoggedIn = false,
+                    isLoggedIn = true,
                     isReadOnly = true,
                     lastSyncTime = 0L
                 )

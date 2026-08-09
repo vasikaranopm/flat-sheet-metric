@@ -266,9 +266,8 @@ fun YearlyReportScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(work.description, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                    Text("Automatic Sensor Purchase & Installation", fontSize = 11.sp, color = Slate800)
                                 }
                                 Text("₹${work.amount2026.toInt()}", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = Amber600)
                             }

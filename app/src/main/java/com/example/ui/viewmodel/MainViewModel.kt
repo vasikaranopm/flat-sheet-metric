@@ -167,7 +167,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun triggerSync() {
         viewModelScope.launch {
             _isLoading.value = true
-            val result = repository.syncGoogleSheet(uiState.value.config)
+            val currentConfig = repository.googleSheetConfig.firstOrNull() ?: uiState.value.config
+            val defaultSheetId = extractSpreadsheetId(getDefaultSheetLinkEnv())
+            val effectiveConfig = if (currentConfig.spreadsheetId.isBlank() && defaultSheetId.isNotBlank()) {
+                currentConfig.copy(spreadsheetId = defaultSheetId)
+            } else {
+                currentConfig
+            }
+            val result = repository.syncGoogleSheet(effectiveConfig)
             _isLoading.value = false
             result.fold(
                 onSuccess = { msg ->
