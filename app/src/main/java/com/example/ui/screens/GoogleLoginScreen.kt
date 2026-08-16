@@ -1,9 +1,8 @@
 package com.example.ui.screens
 
 import android.app.Activity
-import android.content.Context
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.Image
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,8 +10,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -27,20 +24,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.credentials.CredentialManager
-import androidx.credentials.GetCredentialRequest
-import androidx.credentials.GetCredentialResponse
-import androidx.credentials.exceptions.GetCredentialException
 import com.example.data.model.GoogleSheetConfig
 import com.example.ui.theme.*
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
-import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
-import kotlinx.coroutines.launch
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,57 +42,53 @@ fun GoogleLoginScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     var isSigningIn by remember { mutableStateOf(false) }
     var authError by remember { mutableStateOf<String?>(null) }
-    var showManualEmailInput by remember { mutableStateOf(false) }
-    var emailInput by remember { mutableStateOf("") }
 
-    val handleCredentialManagerSignIn = {
-        isSigningIn = true
-        authError = null
-        coroutineScope.launch {
+    val googleSignInOptions = remember(config.webClientId) {
+        val builder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestProfile()
+        if (config.webClientId.isNotBlank()) {
+            builder.requestIdToken(config.webClientId)
+        }
+        builder.build()
+    }
+
+    val googleSignInClient = remember(googleSignInOptions) {
+        GoogleSignIn.getClient(context, googleSignInOptions)
+    }
+
+    val signInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        isSigningIn = false
+        if (result.resultCode == Activity.RESULT_OK) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
             try {
-                val credentialManager = CredentialManager.create(context)
-                
-                // If webClientId is available, use Google ID Option
-                val googleIdOption: GetGoogleIdOption = GetGoogleIdOption.Builder()
-                    .setFilterByAuthorizedAccounts(false)
-                    .setServerClientId(if (config.webClientId.isNotBlank()) config.webClientId else "1083848148483-dummy.apps.googleusercontent.com")
-                    .setAutoSelectEnabled(true)
-                    .build()
-
-                val request: GetCredentialRequest = GetCredentialRequest.Builder()
-                    .addCredentialOption(googleIdOption)
-                    .build()
-
-                val response: GetCredentialResponse = credentialManager.getCredential(
-                    request = request,
-                    context = context as Activity
-                )
-
-                val credential = response.credential
-                if (credential is androidx.credentials.CustomCredential &&
-                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
-                ) {
-                    val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-                    val email = googleIdTokenCredential.id
-                    isSigningIn = false
+                val account = task.getResult(ApiException::class.java)
+                val email = account?.email
+                if (!email.isNullOrBlank()) {
                     onLoginSuccess(email)
                 } else {
-                    isSigningIn = false
-                    showManualEmailInput = true
+                    authError = "Unable to retrieve Google email. Please try again."
                 }
-            } catch (e: GetCredentialException) {
-                isSigningIn = false
-                // Fallback to Google Account prompt / direct Google email entry
-                showManualEmailInput = true
-                authError = "Please select or confirm your Google Account below."
+            } catch (e: ApiException) {
+                authError = "Google Sign-In failed (${e.statusCode}): ${e.localizedMessage ?: "Please try again."}"
             } catch (e: Exception) {
-                isSigningIn = false
-                showManualEmailInput = true
-                authError = "Please enter your Google email to sign in."
+                authError = "Google Sign-In failed: ${e.localizedMessage ?: "Please try again."}"
             }
+        }
+    }
+
+    val handleSignIn = {
+        isSigningIn = true
+        authError = null
+        try {
+            signInLauncher.launch(googleSignInClient.signInIntent)
+        } catch (e: Exception) {
+            isSigningIn = false
+            authError = "Unable to launch Google Sign-In: ${e.localizedMessage}"
         }
     }
 
@@ -217,7 +204,7 @@ fun GoogleLoginScreen(
                             .clip(RoundedCornerShape(26.dp))
                             .border(1.dp, Slate200, RoundedCornerShape(26.dp))
                             .clickable(enabled = !isSigningIn && !isLoading) {
-                                handleCredentialManagerSignIn()
+                                handleSignIn()
                             }
                             .testTag("google_sign_in_button"),
                         color = Color.White,
@@ -244,7 +231,6 @@ fun GoogleLoginScreen(
                                     color = Slate900
                                 )
                             } else {
-                                // Official Google G Logo Colors
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Surface(
                                         shape = CircleShape,
@@ -268,78 +254,6 @@ fun GoogleLoginScreen(
                                         color = Slate900
                                     )
                                 }
-                            }
-                        }
-                    }
-
-                    // Optional manual Google Account confirmation (if CredentialManager opens prompt or on emulator)
-                    AnimatedVisibility(visible = showManualEmailInput) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = 12.dp),
-                                color = Slate200
-                            )
-
-                            Text(
-                                text = "Or select / enter your Google Account:",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-                            )
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            OutlinedTextField(
-                                value = emailInput,
-                                onValueChange = { emailInput = it },
-                                placeholder = { Text("your.name@gmail.com") },
-                                leadingIcon = {
-                                    Icon(Icons.Default.AccountCircle, contentDescription = null, tint = Amber600)
-                                },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Email,
-                                    imeAction = ImeAction.Done
-                                ),
-                                keyboardActions = KeyboardActions(
-                                    onDone = {
-                                        if (emailInput.isNotBlank() && emailInput.contains("@")) {
-                                            onLoginSuccess(emailInput.trim())
-                                        }
-                                    }
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("google_email_input")
-                            )
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Button(
-                                onClick = {
-                                    if (emailInput.isNotBlank() && emailInput.contains("@")) {
-                                        onLoginSuccess(emailInput.trim())
-                                    } else {
-                                        authError = "Please enter a valid Google email address."
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Slate900,
-                                    contentColor = Color.White
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(46.dp)
-                                    .testTag("confirm_google_account_button")
-                            ) {
-                                Text("Continue with this Google Account", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -400,3 +314,4 @@ fun GoogleLoginScreen(
         }
     }
 }
+
