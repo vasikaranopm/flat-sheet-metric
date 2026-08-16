@@ -379,10 +379,64 @@ class MaintenanceRepository(private val database: AppDatabase) {
         if (col3A != -1 && name3A.isNotBlank()) ownerContacts.add(OwnerContact("3A", name3A))
         if (col3B != -1 && name3B.isNotBlank()) ownerContacts.add(OwnerContact("3B", name3B))
 
-        val collections = mutableListOf<CollectionRecord>()
-        val flatTotals = mutableMapOf<String, Double>("1A" to 0.0, "1B" to 0.0, "2A" to 0.0, "2B" to 0.0, "3A" to 0.0, "3B" to 0.0)
+        fun normalizeMonthName(raw: String): String {
+            val clean = raw.trim().lowercase()
+            return when {
+                clean.contains("jan") -> "January"
+                clean.contains("feb") -> "February"
+                clean.contains("mar") -> "March"
+                clean.contains("apr") -> "April"
+                clean.contains("may") -> "May"
+                clean.contains("jun") -> "June"
+                clean.contains("jul") -> "July"
+                clean.contains("aug") -> "August"
+                clean.contains("sep") -> "September"
+                clean.contains("oct") -> "October"
+                clean.contains("nov") -> "November"
+                clean.contains("dec") -> "December"
+                else -> raw.trim()
+            }
+        }
 
-        var currentYear = "2026"
+        fun isGrandTotalRow(monthRaw: String, particularsRaw: String, remarksRaw: String): Boolean {
+            val combined = "$monthRaw $particularsRaw $remarksRaw".lowercase()
+            return combined.contains("grand total") ||
+                   combined.contains("yearly total") ||
+                   combined.contains("annual total") ||
+                   combined.contains("total 202") ||
+                   combined.contains("2026 total") ||
+                   combined.contains("total collection for year") ||
+                   combined.contains("year total")
+        }
+
+        fun isMonthTotalRow(particularsRaw: String, monthRaw: String): Boolean {
+            val pLower = particularsRaw.lowercase().trim()
+            val mLower = monthRaw.lowercase().trim()
+            return pLower == "total" ||
+                   pLower.startsWith("total for") ||
+                   pLower.contains("month total") ||
+                   pLower.contains("total amount") ||
+                   mLower == "total"
+        }
+
+        data class RawCollectionEntry(
+            val year: String,
+            val month: String,
+            val particulars: String,
+            val remarks: String,
+            val isMonthTotal: Boolean,
+            val amt1A: Double,
+            val amt1B: Double,
+            val amt2A: Double,
+            val amt2B: Double,
+            val amt3A: Double,
+            val amt3B: Double,
+            val total: Double
+        )
+
+        val rawEntries = mutableListOf<RawCollectionEntry>()
+        var runningYear = "2026"
+        var runningMonth = ""
 
         for (line in dataLines) {
             val cols = parseCsvLine(line)
@@ -404,14 +458,19 @@ class MaintenanceRepository(private val database: AppDatabase) {
             val remarksRaw = getVal(remarksCol)
 
             if (yearRaw.isNotBlank() && yearRaw.toDoubleOrNull() != null) {
-                currentYear = yearRaw.toDouble().toInt().toString()
+                runningYear = yearRaw.toDouble().toInt().toString()
             }
 
-            if (particularsRaw.contains("total", ignoreCase = true) || monthRaw.contains("total", ignoreCase = true)) {
+            // Skip Yearly Grand Total rows
+            if (isGrandTotalRow(monthRaw, particularsRaw, remarksRaw)) {
                 continue
             }
 
-            if (monthRaw.isBlank() && particularsRaw.isBlank()) {
+            if (monthRaw.isNotBlank() && !monthRaw.equals("total", ignoreCase = true)) {
+                runningMonth = normalizeMonthName(monthRaw)
+            }
+
+            if (runningMonth.isBlank() && particularsRaw.isBlank()) {
                 continue
             }
 
@@ -421,35 +480,113 @@ class MaintenanceRepository(private val database: AppDatabase) {
             val amt2B = parseAmt(col2B)
             val amt3A = parseAmt(col3A)
             val amt3B = parseAmt(col3B)
-
-            val parsedTotal = if (totalCol != -1) parseAmt(totalCol) else 0.0
+            val rowTotal = parseAmt(totalCol)
             val flatSum = amt1A + amt1B + amt2A + amt2B + amt3A + amt3B
-            val total = if (parsedTotal > 0) parsedTotal else flatSum
+            val finalRowTotal = if (rowTotal > 0) rowTotal else flatSum
 
-            if (total > 0 || monthRaw.isNotBlank()) {
+            if (finalRowTotal > 0 || particularsRaw.isNotBlank()) {
+                val isMonthTotal = isMonthTotalRow(particularsRaw, monthRaw)
+                rawEntries.add(
+                    RawCollectionEntry(
+                        year = runningYear,
+                        month = runningMonth.ifBlank { "Unknown" },
+                        particulars = particularsRaw,
+                        remarks = remarksRaw,
+                        isMonthTotal = isMonthTotal,
+                        amt1A = amt1A,
+                        amt1B = amt1B,
+                        amt2A = amt2A,
+                        amt2B = amt2B,
+                        amt3A = amt3A,
+                        amt3B = amt3B,
+                        total = finalRowTotal
+                    )
+                )
+            }
+        }
+
+        // Group by (Year, Month) to construct exactly 1 record per month
+        val groupedByMonth = rawEntries.groupBy { Pair(it.year, it.month) }
+        val collections = mutableListOf<CollectionRecord>()
+        val flatTotals = mutableMapOf<String, Double>("1A" to 0.0, "1B" to 0.0, "2A" to 0.0, "2B" to 0.0, "3A" to 0.0, "3B" to 0.0)
+
+        data class MonthBreakdown(
+            val f1a: Double,
+            val f1b: Double,
+            val f2a: Double,
+            val f2b: Double,
+            val f3a: Double,
+            val f3b: Double,
+            val mTotal: Double
+        )
+
+        for ((key, entries) in groupedByMonth) {
+            val (year, month) = key
+            val totalRow = entries.firstOrNull { it.isMonthTotal }
+
+            val breakdown = if (totalRow != null && totalRow.total > 0) {
+                // If there's a dedicated Total row for this month
+                val rowFlatSum = totalRow.amt1A + totalRow.amt1B + totalRow.amt2A + totalRow.amt2B + totalRow.amt3A + totalRow.amt3B
+                val finalTotal = totalRow.total
+                if (rowFlatSum > 0) {
+                    MonthBreakdown(totalRow.amt1A, totalRow.amt1B, totalRow.amt2A, totalRow.amt2B, totalRow.amt3A, totalRow.amt3B, finalTotal)
+                } else {
+                    val perFlat = finalTotal / 6.0
+                    MonthBreakdown(perFlat, perFlat, perFlat, perFlat, perFlat, perFlat, finalTotal)
+                }
+            } else {
+                // Sum the non-total entries for this month
+                val dataEntries = entries.filter { !it.isMonthTotal }
+                val activeList = if (dataEntries.isNotEmpty()) dataEntries else entries
+                val sum1A = activeList.sumOf { it.amt1A }
+                val sum1B = activeList.sumOf { it.amt1B }
+                val sum2A = activeList.sumOf { it.amt2A }
+                val sum2B = activeList.sumOf { it.amt2B }
+                val sum3A = activeList.sumOf { it.amt3A }
+                val sum3B = activeList.sumOf { it.amt3B }
+                val sumFlats = sum1A + sum1B + sum2A + sum2B + sum3A + sum3B
+                val sumTotals = activeList.sumOf { it.total }
+                val finalTotal = if (sumFlats > 0) sumFlats else sumTotals
+
+                if (sumFlats > 0) {
+                    MonthBreakdown(sum1A, sum1B, sum2A, sum2B, sum3A, sum3B, finalTotal)
+                } else if (finalTotal > 0) {
+                    val perFlat = finalTotal / 6.0
+                    MonthBreakdown(perFlat, perFlat, perFlat, perFlat, perFlat, perFlat, finalTotal)
+                } else {
+                    MonthBreakdown(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+                }
+            }
+
+            val (f1a, f1b, f2a, f2b, f3a) = breakdown
+            val f3b = breakdown.f3b
+            val mTotal = breakdown.mTotal
+
+            if (mTotal > 0 || month.isNotBlank()) {
+                val remarksText = entries.map { it.remarks }.filter { it.isNotBlank() }.distinct().joinToString("; ")
                 collections.add(
                     CollectionRecord(
                         id = collections.size + 1,
-                        year = currentYear,
-                        month = monthRaw.ifBlank { "Month ${collections.size + 1}" },
-                        particulars = particularsRaw.ifBlank { "Monthly Maintenance" },
-                        remarks = remarksRaw,
-                        flat1AAmount = if (amt1A > 0) amt1A else (if (flatSum == 0.0 && total > 0) total / 6.0 else 0.0),
-                        flat1BAmount = if (amt1B > 0) amt1B else (if (flatSum == 0.0 && total > 0) total / 6.0 else 0.0),
-                        flat2AAmount = if (amt2A > 0) amt2A else (if (flatSum == 0.0 && total > 0) total / 6.0 else 0.0),
-                        flat2BAmount = if (amt2B > 0) amt2B else (if (flatSum == 0.0 && total > 0) total / 6.0 else 0.0),
-                        flat3AAmount = if (amt3A > 0) amt3A else (if (flatSum == 0.0 && total > 0) total / 6.0 else 0.0),
-                        flat3BAmount = if (amt3B > 0) amt3B else (if (flatSum == 0.0 && total > 0) total / 6.0 else 0.0),
-                        totalAmount = total
+                        year = year,
+                        month = month,
+                        particulars = "Maintenance Collections",
+                        remarks = remarksText,
+                        flat1AAmount = f1a,
+                        flat1BAmount = f1b,
+                        flat2AAmount = f2a,
+                        flat2BAmount = f2b,
+                        flat3AAmount = f3a,
+                        flat3BAmount = f3b,
+                        totalAmount = mTotal
                     )
                 )
 
-                flatTotals["1A"] = (flatTotals["1A"] ?: 0.0) + (if (amt1A > 0) amt1A else total / 6.0)
-                flatTotals["1B"] = (flatTotals["1B"] ?: 0.0) + (if (amt1B > 0) amt1B else total / 6.0)
-                flatTotals["2A"] = (flatTotals["2A"] ?: 0.0) + (if (amt2A > 0) amt2A else total / 6.0)
-                flatTotals["2B"] = (flatTotals["2B"] ?: 0.0) + (if (amt2B > 0) amt2B else total / 6.0)
-                flatTotals["3A"] = (flatTotals["3A"] ?: 0.0) + (if (amt3A > 0) amt3A else total / 6.0)
-                flatTotals["3B"] = (flatTotals["3B"] ?: 0.0) + (if (amt3B > 0) amt3B else total / 6.0)
+                flatTotals["1A"] = (flatTotals["1A"] ?: 0.0) + f1a
+                flatTotals["1B"] = (flatTotals["1B"] ?: 0.0) + f1b
+                flatTotals["2A"] = (flatTotals["2A"] ?: 0.0) + f2a
+                flatTotals["2B"] = (flatTotals["2B"] ?: 0.0) + f2b
+                flatTotals["3A"] = (flatTotals["3A"] ?: 0.0) + f3a
+                flatTotals["3B"] = (flatTotals["3B"] ?: 0.0) + f3b
             }
         }
 

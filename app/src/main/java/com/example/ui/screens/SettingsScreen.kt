@@ -36,6 +36,7 @@ fun SettingsScreen(
     onUpdateSheetUrl: (String) -> Unit = {},
     onSaveGcpConfig: (String, String, String, String, String, String) -> Unit = { _, _, _, _, _, _ -> },
     onTriggerSync: () -> Unit,
+    onNavigateToYearlyReport: () -> Unit = {},
     onNavigateBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -153,6 +154,64 @@ fun SettingsScreen(
                             Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Sign Out", fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+
+            // Yearly Financial Report Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateToYearlyReport() },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Amber100),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.BarChart,
+                                    contentDescription = null,
+                                    tint = Amber600,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Yearly Financial Report",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Annual summary, flat breakdown & major works",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = onNavigateToYearlyReport,
+                            colors = ButtonDefaults.buttonColors(containerColor = Amber500, contentColor = Slate900),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text("View", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

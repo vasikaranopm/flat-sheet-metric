@@ -284,7 +284,7 @@ fun DashboardScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             NavButtonChip(
-                label = "Collections",
+                label = "Collection",
                 icon = Icons.Default.AccountBalanceWallet,
                 onClick = onNavigateToCollections,
                 modifier = Modifier.weight(1f)
@@ -382,9 +382,10 @@ fun DashboardScreen(
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Text(
-                                            text = record.particulars.ifBlank { "Monthly Maintenance" },
+                                            text = "₹${(record.totalAmount / 6.0).toInt()}/flat • 6 Flats",
                                             fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            color = Amber600,
+                                            fontWeight = FontWeight.Medium
                                         )
                                     }
                                 }

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PeopleAlt
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -20,6 +21,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.compose.NavHost
@@ -58,10 +60,10 @@ class MainActivity : ComponentActivity() {
 
                 val bottomNavItems = listOf(
                     BottomNavItem("dashboard", "Overview", Icons.Default.Home, "nav_dashboard"),
-                    BottomNavItem("collections", "Collections", Icons.Default.AccountBalanceWallet, "nav_collections"),
+                    BottomNavItem("collections", "Collection", Icons.Default.AccountBalanceWallet, "nav_collections"),
                     BottomNavItem("expenses", "Expenses", Icons.Default.ReceiptLong, "nav_expenses"),
-                    BottomNavItem("yearly_report", "Yearly", Icons.Default.BarChart, "nav_yearly"),
-                    BottomNavItem("contacts", "Directory", Icons.Default.PeopleAlt, "nav_contacts")
+                    BottomNavItem("contacts", "Directory", Icons.Default.PeopleAlt, "nav_contacts"),
+                    BottomNavItem("settings", "Settings", Icons.Default.Settings, "nav_settings")
                 )
 
                 LaunchedEffect(uiState.syncMessage) {
@@ -107,8 +109,11 @@ class MainActivity : ComponentActivity() {
                                         label = {
                                             Text(
                                                 text = item.label,
-                                                fontSize = 10.sp,
-                                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                                fontSize = 11.sp,
+                                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                         },
                                         colors = NavigationBarItemDefaults.colors(
@@ -203,7 +208,7 @@ class MainActivity : ComponentActivity() {
                                     collectionRecords = uiState.collectionRecords,
                                     categories = categories,
                                     majorWorks = majorWorks,
-                                    onNavigateBack = null
+                                    onNavigateBack = { navController.popBackStack() }
                                 )
                             }
 
@@ -230,7 +235,8 @@ class MainActivity : ComponentActivity() {
                                         viewModel.updateGcpConfig(spreadsheetId, apiKey, gcpProject, serviceAccount, userEmail, webClientId)
                                     },
                                     onTriggerSync = { viewModel.triggerSync() },
-                                    onNavigateBack = { navController.popBackStack() }
+                                    onNavigateToYearlyReport = { navController.navigate("yearly_report") },
+                                    onNavigateBack = null
                                 )
                             }
                         }

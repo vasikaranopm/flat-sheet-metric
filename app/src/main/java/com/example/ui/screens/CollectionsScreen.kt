@@ -366,7 +366,12 @@ fun MonthlyTotalCard(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val perFlat = record.totalAmount / 6.0
+    val f1a = if (record.flat1AAmount > 0) record.flat1AAmount else record.totalAmount / 6.0
+    val f1b = if (record.flat1BAmount > 0) record.flat1BAmount else record.totalAmount / 6.0
+    val f2a = if (record.flat2AAmount > 0) record.flat2AAmount else record.totalAmount / 6.0
+    val f2b = if (record.flat2BAmount > 0) record.flat2BAmount else record.totalAmount / 6.0
+    val f3a = if (record.flat3AAmount > 0) record.flat3AAmount else record.totalAmount / 6.0
+    val f3b = if (record.flat3BAmount > 0) record.flat3BAmount else record.totalAmount / 6.0
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -374,102 +379,139 @@ fun MonthlyTotalCard(
         shape = RoundedCornerShape(14.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(14.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(Amber100),
-                    contentAlignment = Alignment.Center
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Icon(
-                        Icons.Default.CalendarToday,
-                        contentDescription = null,
-                        tint = Amber600,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column {
-                    Text(
-                        text = "${record.month} ${record.year}".trim(),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "₹${perFlat.toInt()}/flat",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Amber600
-                        )
-                        Text(
-                            text = " • 6 Flats",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(Amber100),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.CalendarToday,
+                            contentDescription = null,
+                            tint = Amber600,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
-                    if (record.remarks.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(2.dp))
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column {
                         Text(
-                            text = "Note: ${record.remarks}",
-                            fontSize = 11.sp,
-                            color = Slate800.copy(alpha = 0.6f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            text = "${record.month} ${record.year}".trim(),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
+                        Text(
+                            text = "6 Flats • Monthly Maintenance",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = Emerald50,
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "₹${record.totalAmount.toInt()}",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Emerald700
+                            )
+                            Text(
+                                text = "Month Total",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Emerald700.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Slate800, modifier = Modifier.size(16.dp))
+                    }
+
+                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = Rose600, modifier = Modifier.size(16.dp))
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    color = Emerald50,
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+            // 6 Flats individual collection chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                val flatItems = listOf(
+                    "1A" to f1a,
+                    "1B" to f1b,
+                    "2A" to f2a,
+                    "2B" to f2b,
+                    "3A" to f3a,
+                    "3B" to f3b
+                )
+                flatItems.forEach { (flat, amt) ->
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text(
-                            text = "₹${record.totalAmount.toInt()}",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Emerald700
-                        )
-                        Text(
-                            text = "Total Value",
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Emerald700.copy(alpha = 0.8f)
-                        )
+                        Column(
+                            modifier = Modifier.padding(vertical = 4.dp, horizontal = 2.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = flat,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Slate900
+                            )
+                            Text(
+                                text = "₹${amt.toInt()}",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Amber600
+                            )
+                        }
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.width(4.dp))
-
-                IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Slate800, modifier = Modifier.size(16.dp))
-                }
-
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = Rose600, modifier = Modifier.size(16.dp))
-                }
+            if (record.remarks.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Note: ${record.remarks}",
+                    fontSize = 11.sp,
+                    color = Slate800.copy(alpha = 0.6f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
