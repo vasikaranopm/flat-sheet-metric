@@ -27,7 +27,8 @@ import com.example.ui.theme.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun YearlyReportScreen(
-    contributions: List<YearlyContribution>,
+    contributions: List<YearlyContribution> = emptyList(),
+    collectionRecords: List<com.example.data.model.CollectionRecord> = emptyList(),
     categories: List<YearlyExpenseCategory>,
     majorWorks: List<MajorWork>,
     onNavigateBack: (() -> Unit)? = null,
@@ -35,7 +36,11 @@ fun YearlyReportScreen(
 ) {
     val scrollState = rememberScrollState()
 
-    val totalContributions = contributions.sumOf { it.amount2026 }
+    val totalCollected = if (collectionRecords.isNotEmpty()) {
+        collectionRecords.sumOf { it.totalAmount }
+    } else {
+        contributions.sumOf { it.amount2026 }
+    }
     val totalExpenses = categories.sumOf { it.amount2026 }
 
     Scaffold(
@@ -81,8 +86,8 @@ fun YearlyReportScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text("Total Collected", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
-                            Text("₹${totalContributions.toInt()}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Emerald600)
+                            Text("Total Maintenance Collected", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
+                            Text("₹${totalCollected.toInt()}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Emerald600)
                         }
 
                         Column(horizontalAlignment = Alignment.End) {
@@ -95,8 +100,8 @@ fun YearlyReportScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Section 1: Contribution Summary Table (If contributions exist)
-            if (contributions.isNotEmpty()) {
+            // Section 1: Monthly Maintenance Collections Breakdown
+            if (collectionRecords.isNotEmpty()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -110,7 +115,7 @@ fun YearlyReportScreen(
                         ) {
                             Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Emerald600, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Annual Collections by Flat", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Text("Monthly Maintenance Collections", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
@@ -123,12 +128,48 @@ fun YearlyReportScreen(
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Flat", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Text("Resident / Payee", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Text("Paid Amount", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Month / Year", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Particulars", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Total Value", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
 
                         Spacer(modifier = Modifier.height(6.dp))
+
+                        collectionRecords.forEach { item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("${item.month} ${item.year}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text(item.particulars.ifBlank { "Maintenance" }, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                Text("₹${item.totalAmount.toInt()}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Emerald600)
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            } else if (contributions.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Emerald600, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Annual Collections", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         contributions.forEach { item ->
                             Row(
@@ -138,8 +179,8 @@ fun YearlyReportScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(item.flatNo, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                Text(item.residentName.ifBlank { "Flat ${item.flatNo}" }, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                Text("Flat ${item.flatNo}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text(item.residentName.ifBlank { "Resident" }, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                                 Text("₹${item.amount2026.toInt()}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Emerald600)
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))

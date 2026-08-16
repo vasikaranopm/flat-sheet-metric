@@ -311,7 +311,7 @@ fun DashboardScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Monthly Maintenance Breakdown Preview Card
+        // Monthly Maintenance Collections Overview (Total Value Only)
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -326,15 +326,13 @@ fun DashboardScreen(
                 ) {
                     Column {
                         Text(
-                            text = if (latestCollection != null && latestCollection.month.isNotBlank())
-                                "${latestCollection.month} ${latestCollection.year} Maintenance"
-                            else "Monthly Maintenance",
+                            text = "Maintenance Collections (${collectionRecords.size} Months)",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Individual flat amounts may differ",
+                            text = "Total value per month (amounts differ)",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
@@ -347,28 +345,60 @@ fun DashboardScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                if (latestCollection != null) {
-                    val flats = listOf(
-                        Triple("1A", "M.Madhan Raj", latestCollection.flat1AAmount),
-                        Triple("1B", "S.Vasikaran", latestCollection.flat1BAmount),
-                        Triple("2A", "S. Hariprasad", latestCollection.flat2AAmount),
-                        Triple("2B", "P.Seenivasan", latestCollection.flat2BAmount),
-                        Triple("3A", "A. Venkatesh Kumar", latestCollection.flat3AAmount),
-                        Triple("3B", "M.Mohan", latestCollection.flat3BAmount)
-                    )
-
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        flats.chunked(2).forEach { rowFlats ->
+                if (collectionRecords.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        collectionRecords.take(4).forEach { record ->
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .clickable { onNavigateToCollections() }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                rowFlats.forEach { (flatNo, name, amt) ->
-                                    DynamicFlatCard(
-                                        flatNo = flatNo,
-                                        residentName = name,
-                                        amount = amt,
-                                        modifier = Modifier.weight(1f)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(CircleShape)
+                                            .background(Amber100),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.CalendarToday,
+                                            contentDescription = null,
+                                            tint = Amber600,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = "${record.month} ${record.year}".trim(),
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = record.particulars.ifBlank { "Monthly Maintenance" },
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    color = Emerald50,
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = "₹${record.totalAmount.toInt()}",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Emerald700,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
                             }
@@ -376,7 +406,7 @@ fun DashboardScreen(
                     }
                 } else {
                     Text(
-                        text = "No collection records logged yet. Tap 'Collections' to record maintenance.",
+                        text = "No collection records logged yet. Tap 'Collections' to record monthly maintenance totals.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         modifier = Modifier.padding(vertical = 8.dp)

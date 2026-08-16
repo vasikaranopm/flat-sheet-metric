@@ -149,8 +149,8 @@ class MainActivity : ComponentActivity() {
                                 CollectionsScreen(
                                     collectionRecords = uiState.collectionRecords,
                                     ownerContacts = uiState.ownerContacts,
-                                    onAddCollection = { yr, mo, part, rem, f1a, f1b, f2a, f2b, f3a, f3b ->
-                                        viewModel.addCollectionRecord(yr, mo, part, rem, f1a, f1b, f2a, f2b, f3a, f3b)
+                                    onAddCollection = { yr, mo, total, part, rem ->
+                                        viewModel.addCollectionTotal(yr, mo, total, part, rem)
                                     },
                                     onUpdateCollection = { record ->
                                         viewModel.updateCollectionRecord(record)
@@ -200,6 +200,7 @@ class MainActivity : ComponentActivity() {
 
                                 YearlyReportScreen(
                                     contributions = contributions,
+                                    collectionRecords = uiState.collectionRecords,
                                     categories = categories,
                                     majorWorks = majorWorks,
                                     onNavigateBack = null

@@ -346,6 +346,12 @@ class MaintenanceRepository(private val database: AppDatabase) {
         val monthCol = headerCols.indexOfFirst { it.contains("month", ignoreCase = true) }
         val particularsCol = headerCols.indexOfFirst { it.contains("particular", ignoreCase = true) }
         val remarksCol = headerCols.indexOfFirst { it.contains("remark", ignoreCase = true) }
+        val totalCol = headerCols.indexOfFirst {
+            it.contains("total", ignoreCase = true) ||
+            it.contains("collection", ignoreCase = true) ||
+            it.contains("amount", ignoreCase = true) ||
+            it.contains("maintenance", ignoreCase = true)
+        }
 
         // Detect Flat columns (1A, 1B, 2A, 2B, 3A, 3B) and their resident names from header e.g. "1A - M.Madhan Raj"
         fun findFlatCol(flat: String): Pair<Int, String> {
@@ -416,7 +422,10 @@ class MaintenanceRepository(private val database: AppDatabase) {
             val amt3A = parseAmt(col3A)
             val amt3B = parseAmt(col3B)
 
-            val total = amt1A + amt1B + amt2A + amt2B + amt3A + amt3B
+            val parsedTotal = if (totalCol != -1) parseAmt(totalCol) else 0.0
+            val flatSum = amt1A + amt1B + amt2A + amt2B + amt3A + amt3B
+            val total = if (parsedTotal > 0) parsedTotal else flatSum
+
             if (total > 0 || monthRaw.isNotBlank()) {
                 collections.add(
                     CollectionRecord(
@@ -425,22 +434,22 @@ class MaintenanceRepository(private val database: AppDatabase) {
                         month = monthRaw.ifBlank { "Month ${collections.size + 1}" },
                         particulars = particularsRaw.ifBlank { "Monthly Maintenance" },
                         remarks = remarksRaw,
-                        flat1AAmount = amt1A,
-                        flat1BAmount = amt1B,
-                        flat2AAmount = amt2A,
-                        flat2BAmount = amt2B,
-                        flat3AAmount = amt3A,
-                        flat3BAmount = amt3B,
+                        flat1AAmount = if (amt1A > 0) amt1A else (if (flatSum == 0.0 && total > 0) total / 6.0 else 0.0),
+                        flat1BAmount = if (amt1B > 0) amt1B else (if (flatSum == 0.0 && total > 0) total / 6.0 else 0.0),
+                        flat2AAmount = if (amt2A > 0) amt2A else (if (flatSum == 0.0 && total > 0) total / 6.0 else 0.0),
+                        flat2BAmount = if (amt2B > 0) amt2B else (if (flatSum == 0.0 && total > 0) total / 6.0 else 0.0),
+                        flat3AAmount = if (amt3A > 0) amt3A else (if (flatSum == 0.0 && total > 0) total / 6.0 else 0.0),
+                        flat3BAmount = if (amt3B > 0) amt3B else (if (flatSum == 0.0 && total > 0) total / 6.0 else 0.0),
                         totalAmount = total
                     )
                 )
 
-                flatTotals["1A"] = (flatTotals["1A"] ?: 0.0) + amt1A
-                flatTotals["1B"] = (flatTotals["1B"] ?: 0.0) + amt1B
-                flatTotals["2A"] = (flatTotals["2A"] ?: 0.0) + amt2A
-                flatTotals["2B"] = (flatTotals["2B"] ?: 0.0) + amt2B
-                flatTotals["3A"] = (flatTotals["3A"] ?: 0.0) + amt3A
-                flatTotals["3B"] = (flatTotals["3B"] ?: 0.0) + amt3B
+                flatTotals["1A"] = (flatTotals["1A"] ?: 0.0) + (if (amt1A > 0) amt1A else total / 6.0)
+                flatTotals["1B"] = (flatTotals["1B"] ?: 0.0) + (if (amt1B > 0) amt1B else total / 6.0)
+                flatTotals["2A"] = (flatTotals["2A"] ?: 0.0) + (if (amt2A > 0) amt2A else total / 6.0)
+                flatTotals["2B"] = (flatTotals["2B"] ?: 0.0) + (if (amt2B > 0) amt2B else total / 6.0)
+                flatTotals["3A"] = (flatTotals["3A"] ?: 0.0) + (if (amt3A > 0) amt3A else total / 6.0)
+                flatTotals["3B"] = (flatTotals["3B"] ?: 0.0) + (if (amt3B > 0) amt3B else total / 6.0)
             }
         }
 

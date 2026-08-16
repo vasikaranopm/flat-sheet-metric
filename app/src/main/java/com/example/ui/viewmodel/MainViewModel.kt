@@ -366,6 +366,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun addCollectionTotal(
+        year: String,
+        month: String,
+        totalAmount: Double,
+        particulars: String = "Monthly Maintenance",
+        remarks: String = ""
+    ) {
+        viewModelScope.launch {
+            val record = CollectionRecord(
+                year = year,
+                month = month,
+                particulars = particulars.ifBlank { "Monthly Maintenance" },
+                remarks = remarks,
+                flat1AAmount = totalAmount / 6.0,
+                flat1BAmount = totalAmount / 6.0,
+                flat2AAmount = totalAmount / 6.0,
+                flat2BAmount = totalAmount / 6.0,
+                flat3AAmount = totalAmount / 6.0,
+                flat3BAmount = totalAmount / 6.0,
+                totalAmount = totalAmount
+            )
+            repository.addCollectionRecord(record)
+            _syncMessage.value = "Maintenance recorded for $month $year: ₹${totalAmount.toInt()}"
+        }
+    }
+
     fun addCollectionRecord(
         year: String,
         month: String,

@@ -32,7 +32,7 @@ import com.example.ui.theme.*
 fun CollectionsScreen(
     collectionRecords: List<CollectionRecord>,
     ownerContacts: List<OwnerContact> = emptyList(),
-    onAddCollection: (String, String, String, String, Double, Double, Double, Double, Double, Double) -> Unit,
+    onAddCollection: (String, String, Double, String, String) -> Unit,
     onUpdateCollection: (CollectionRecord) -> Unit,
     onDeleteCollection: (Int) -> Unit,
     onNavigateBack: (() -> Unit)? = null,
@@ -59,9 +59,12 @@ fun CollectionsScreen(
         filteredRecords.sumOf { it.totalAmount }
     }
 
-    // Helper map of flat numbers to resident names
-    val residentNames = remember(ownerContacts) {
-        ownerContacts.associate { it.flatNo.uppercase() to it.residentName }
+    val averageMonthly = remember(filteredRecords) {
+        if (filteredRecords.isNotEmpty()) totalCollected / filteredRecords.size else 0.0
+    }
+
+    val averagePerFlat = remember(averageMonthly) {
+        averageMonthly / 6.0
     }
 
     Scaffold(
@@ -76,7 +79,7 @@ fun CollectionsScreen(
                             color = Slate900
                         )
                         Text(
-                            text = "Month-by-month flat maintenance breakdown",
+                            text = "6 Flats (1A, 1B, 2A, 2B, 3A, 3B)",
                             fontSize = 11.sp,
                             color = Slate800.copy(alpha = 0.7f)
                         )
@@ -110,12 +113,12 @@ fun CollectionsScreen(
                 modifier = Modifier.testTag("add_collection_fab")
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Record Collection")
+                    Icon(Icons.Default.Add, contentDescription = "Record Month")
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Record Month", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Record Maintenance", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
             }
         },
@@ -143,13 +146,13 @@ fun CollectionsScreen(
                     ) {
                         Column {
                             Text(
-                                text = "Total Collections",
+                                text = "Total Building Collection",
                                 fontSize = 12.sp,
                                 color = Amber100
                             )
                             Text(
                                 text = "₹${totalCollected.toInt()}",
-                                fontSize = 24.sp,
+                                fontSize = 26.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
@@ -180,13 +183,37 @@ fun CollectionsScreen(
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Divider(color = Color.White.copy(alpha = 0.15f))
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    Text(
-                        text = "Individual flat amounts can vary per month (e.g. ₹1000, ₹1200 or custom charges).",
-                        fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.75f)
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.TrendingUp,
+                                contentDescription = null,
+                                tint = Emerald500,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Avg/Flat: ₹${averagePerFlat.toInt()}/mo",
+                                fontSize = 12.sp,
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        Text(
+                            text = "Monthly Total: ₹${averageMonthly.toInt()}",
+                            fontSize = 11.sp,
+                            color = Amber100.copy(alpha = 0.8f)
+                        )
+                    }
                 }
             }
 
@@ -203,7 +230,13 @@ fun CollectionsScreen(
                         FilterChip(
                             selected = isSelected,
                             onClick = { selectedMonthFilter = month },
-                            label = { Text(month, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            label = {
+                                Text(
+                                    month,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = Amber500,
                                 selectedLabelColor = Slate900
@@ -230,14 +263,14 @@ fun CollectionsScreen(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "No maintenance records found",
+                            text = "No maintenance records yet",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Slate800
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Tap 'Record Month' to log monthly maintenance for flats 1A to 3B.",
+                            text = "Tap 'Record Maintenance' to add monthly maintenance value.",
                             fontSize = 12.sp,
                             color = Slate800.copy(alpha = 0.6f),
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -249,13 +282,12 @@ fun CollectionsScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(top = 6.dp, bottom = 88.dp)
                 ) {
                     items(filteredRecords, key = { it.id }) { record ->
-                        MonthCollectionCard(
+                        MonthlyTotalCard(
                             record = record,
-                            residentNames = residentNames,
                             onEdit = { recordToEdit = record },
                             onDelete = { recordToDelete = record }
                         )
@@ -267,31 +299,31 @@ fun CollectionsScreen(
 
     // Add / Edit Dialog
     if (showAddDialog || recordToEdit != null) {
-        MonthlyCollectionDialog(
+        MaintenanceTotalDialog(
             initialRecord = recordToEdit,
-            residentNames = residentNames,
             onDismiss = {
                 showAddDialog = false
                 recordToEdit = null
             },
-            onSave = { year, month, particulars, remarks, f1a, f1b, f2a, f2b, f3a, f3b ->
+            onSave = { year, month, totalAmount, particulars, remarks ->
                 if (recordToEdit != null) {
+                    val perFlat = totalAmount / 6.0
                     val updated = recordToEdit!!.copy(
                         year = year,
                         month = month,
                         particulars = particulars,
                         remarks = remarks,
-                        flat1AAmount = f1a,
-                        flat1BAmount = f1b,
-                        flat2AAmount = f2a,
-                        flat2BAmount = f2b,
-                        flat3AAmount = f3a,
-                        flat3BAmount = f3b,
-                        totalAmount = f1a + f1b + f2a + f2b + f3a + f3b
+                        flat1AAmount = perFlat,
+                        flat1BAmount = perFlat,
+                        flat2AAmount = perFlat,
+                        flat2BAmount = perFlat,
+                        flat3AAmount = perFlat,
+                        flat3BAmount = perFlat,
+                        totalAmount = totalAmount
                     )
                     onUpdateCollection(updated)
                 } else {
-                    onAddCollection(year, month, particulars, remarks, f1a, f1b, f2a, f2b, f3a, f3b)
+                    onAddCollection(year, month, totalAmount, particulars, remarks)
                 }
                 showAddDialog = false
                 recordToEdit = null
@@ -303,9 +335,9 @@ fun CollectionsScreen(
     if (recordToDelete != null) {
         AlertDialog(
             onDismissRequest = { recordToDelete = null },
-            title = { Text("Delete Collection Record?") },
+            title = { Text("Delete Maintenance Record?") },
             text = {
-                Text("Are you sure you want to delete the maintenance collection record for ${recordToDelete!!.month} ${recordToDelete!!.year} (Total: ₹${recordToDelete!!.totalAmount.toInt()})?")
+                Text("Are you sure you want to delete the maintenance record for ${recordToDelete!!.month} ${recordToDelete!!.year} (Total: ₹${recordToDelete!!.totalAmount.toInt()}, ₹${(recordToDelete!!.totalAmount / 6.0).toInt()}/flat)?")
             },
             confirmButton = {
                 Button(
@@ -328,221 +360,155 @@ fun CollectionsScreen(
 }
 
 @Composable
-fun MonthCollectionCard(
+fun MonthlyTotalCard(
     record: CollectionRecord,
-    residentNames: Map<String, String>,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val perFlat = record.totalAmount / 6.0
+
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(14.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Header Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(Amber100),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.CalendarToday,
-                            contentDescription = null,
-                            tint = Amber600,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "${record.month} ${record.year}".trim(),
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        if (record.particulars.isNotBlank()) {
-                            Text(
-                                text = record.particulars,
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                            )
-                        }
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        color = Emerald50,
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = "₹${record.totalAmount.toInt()}",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Emerald700,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Slate800, modifier = Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = Rose600, modifier = Modifier.size(16.dp))
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            Divider(color = MaterialTheme.colorScheme.surfaceVariant)
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // 6 Flats Grid (2 columns x 3 rows)
-            val flats = listOf(
-                Triple("1A", record.flat1AAmount, residentNames["1A"] ?: "M.Madhan Raj"),
-                Triple("1B", record.flat1BAmount, residentNames["1B"] ?: "S.Vasikaran"),
-                Triple("2A", record.flat2AAmount, residentNames["2A"] ?: "S. Hariprasad"),
-                Triple("2B", record.flat2BAmount, residentNames["2B"] ?: "P.Seenivasan"),
-                Triple("3A", record.flat3AAmount, residentNames["3A"] ?: "A. Venkatesh Kumar"),
-                Triple("3B", record.flat3BAmount, residentNames["3B"] ?: "M.Mohan")
-            )
-
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                flats.chunked(2).forEach { rowFlats ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        rowFlats.forEach { (flatNo, amount, resident) ->
-                            FlatMonthlyItem(
-                                flatNo = flatNo,
-                                amount = amount,
-                                resident = resident,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (record.remarks.isNotBlank()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = null,
-                        tint = Amber600,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = record.remarks,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun FlatMonthlyItem(
-    flatNo: String,
-    amount: Double,
-    resident: String,
-    modifier: Modifier = Modifier
-) {
-    val isPaid = amount > 0
-    Surface(
-        modifier = modifier,
-        color = if (isPaid) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f) else Rose50,
-        shape = RoundedCornerShape(8.dp)
-    ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
-                Surface(
-                    color = if (isPaid) Slate900 else Rose600,
-                    shape = RoundedCornerShape(4.dp)
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(Amber100),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = flatNo,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                    Icon(
+                        Icons.Default.CalendarToday,
+                        contentDescription = null,
+                        tint = Amber600,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = resident,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column {
+                    Text(
+                        text = "${record.month} ${record.year}".trim(),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "₹${perFlat.toInt()}/flat",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Amber600
+                        )
+                        Text(
+                            text = " • 6 Flats",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    }
+                    if (record.remarks.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Note: ${record.remarks}",
+                            fontSize = 11.sp,
+                            color = Slate800.copy(alpha = 0.6f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
 
-            Text(
-                text = if (isPaid) "₹${amount.toInt()}" else "Pending",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isPaid) Emerald700 else Rose600
-            )
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    color = Emerald50,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "₹${record.totalAmount.toInt()}",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Emerald700
+                        )
+                        Text(
+                            text = "Total Value",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Emerald700.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Slate800, modifier = Modifier.size(16.dp))
+                }
+
+                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = Rose600, modifier = Modifier.size(16.dp))
+                }
+            }
         }
     }
 }
 
 @Composable
-fun MonthlyCollectionDialog(
+fun MaintenanceTotalDialog(
     initialRecord: CollectionRecord?,
-    residentNames: Map<String, String>,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, String, Double, Double, Double, Double, Double, Double) -> Unit
+    onSave: (String, String, Double, String, String) -> Unit
 ) {
     var yearInput by remember { mutableStateOf(initialRecord?.year?.ifBlank { "2026" } ?: "2026") }
     var monthInput by remember { mutableStateOf(initialRecord?.month?.ifBlank { "September" } ?: "September") }
+
+    // Rate per Flat vs Total
+    var perFlatInput by remember {
+        mutableStateOf(
+            if (initialRecord != null && initialRecord.totalAmount > 0) {
+                (initialRecord.totalAmount / 6.0).toInt().toString()
+            } else {
+                "1000"
+            }
+        )
+    }
+
+    var totalAmountInput by remember {
+        mutableStateOf(
+            if (initialRecord != null && initialRecord.totalAmount > 0) {
+                initialRecord.totalAmount.toInt().toString()
+            } else {
+                "6000"
+            }
+        )
+    }
+
     var particularsInput by remember { mutableStateOf(initialRecord?.particulars?.ifBlank { "Monthly Maintenance" } ?: "Monthly Maintenance") }
     var remarksInput by remember { mutableStateOf(initialRecord?.remarks ?: "") }
 
-    var f1aInput by remember { mutableStateOf(initialRecord?.flat1AAmount?.toInt()?.toString() ?: "1000") }
-    var f1bInput by remember { mutableStateOf(initialRecord?.flat1BAmount?.toInt()?.toString() ?: "1000") }
-    var f2aInput by remember { mutableStateOf(initialRecord?.flat2AAmount?.toInt()?.toString() ?: "1000") }
-    var f2bInput by remember { mutableStateOf(initialRecord?.flat2BAmount?.toInt()?.toString() ?: "1000") }
-    var f3aInput by remember { mutableStateOf(initialRecord?.flat3AAmount?.toInt()?.toString() ?: "1000") }
-    var f3bInput by remember { mutableStateOf(initialRecord?.flat3BAmount?.toInt()?.toString() ?: "1000") }
-
-    var presetAmountInput by remember { mutableStateOf("1000") }
-
-    val liveTotal = remember(f1aInput, f1bInput, f2aInput, f2bInput, f3aInput, f3bInput) {
-        (f1aInput.toDoubleOrNull() ?: 0.0) +
-                (f1bInput.toDoubleOrNull() ?: 0.0) +
-                (f2aInput.toDoubleOrNull() ?: 0.0) +
-                (f2bInput.toDoubleOrNull() ?: 0.0) +
-                (f3aInput.toDoubleOrNull() ?: 0.0) +
-                (f3bInput.toDoubleOrNull() ?: 0.0)
-    }
-
+    val presetPerFlatRates = listOf("1000", "1200", "1250", "1500", "2000")
     val monthsList = listOf("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
 
     AlertDialog(
@@ -552,165 +518,169 @@ fun MonthlyCollectionDialog(
                 Icon(Icons.Default.Payments, contentDescription = null, tint = Amber600)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (initialRecord != null) "Edit Monthly Collection" else "Record Month Maintenance",
+                    text = if (initialRecord != null) "Edit Monthly Maintenance" else "Record Monthly Maintenance",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
         },
         text = {
-            LazyColumn(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                item {
-                    Text(
-                        text = "Specify maintenance amounts for each flat. Amounts can differ per flat (e.g. ₹1000, ₹1200 or extra arrears):",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                Text(
+                    text = "Specify maintenance value per flat or total for the 6 flats:",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+
+                // Month & Year Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = monthInput,
+                        onValueChange = { monthInput = it },
+                        label = { Text("Month", fontSize = 12.sp) },
+                        modifier = Modifier.weight(1.3f)
+                    )
+                    OutlinedTextField(
+                        value = yearInput,
+                        onValueChange = { yearInput = it },
+                        label = { Text("Year", fontSize = 12.sp) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(0.9f)
                     )
                 }
 
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = monthInput,
-                            onValueChange = { monthInput = it },
-                            label = { Text("Month", fontSize = 12.sp) },
-                            modifier = Modifier.weight(1.3f)
-                        )
-                        OutlinedTextField(
-                            value = yearInput,
-                            onValueChange = { yearInput = it },
-                            label = { Text("Year", fontSize = 12.sp) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(0.9f)
-                        )
-                    }
-                }
-
-                // Preset button to set all flats at once
-                item {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            OutlinedTextField(
-                                value = presetAmountInput,
-                                onValueChange = { presetAmountInput = it },
-                                label = { Text("Base Amount", fontSize = 10.sp) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.width(110.dp)
+                // Month Quick Select
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(monthsList) { m ->
+                        val isSelected = monthInput.equals(m, ignoreCase = true)
+                        SuggestionChip(
+                            onClick = { monthInput = m },
+                            label = { Text(m.take(3), fontSize = 11.sp) },
+                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                containerColor = if (isSelected) Amber500 else MaterialTheme.colorScheme.surfaceVariant
                             )
-                            Button(
-                                onClick = {
-                                    f1aInput = presetAmountInput
-                                    f1bInput = presetAmountInput
-                                    f2aInput = presetAmountInput
-                                    f2bInput = presetAmountInput
-                                    f3aInput = presetAmountInput
-                                    f3bInput = presetAmountInput
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Slate900)
-                            ) {
-                                Text("Apply All", fontSize = 11.sp)
-                            }
-                        }
+                        )
                     }
                 }
 
-                // Individual Flat Amount inputs
-                item {
-                    Text("Flat Maintenance Amounts (₹):", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                }
+                // Maintenance Value Per Flat Input
+                OutlinedTextField(
+                    value = perFlatInput,
+                    onValueChange = { input ->
+                        val clean = input.filter { it.isDigit() }
+                        perFlatInput = clean
+                        val rate = clean.toDoubleOrNull() ?: 0.0
+                        totalAmountInput = (rate * 6).toInt().toString()
+                    },
+                    label = { Text("Maintenance Value per Flat (₹)", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                    placeholder = { Text("e.g. 1000 or 1200") },
+                    leadingIcon = { Text("₹", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Amber600) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FlatAmountField(flatNo = "1A", resident = residentNames["1A"] ?: "M.Madhan Raj", value = f1aInput, onValueChange = { f1aInput = it }, modifier = Modifier.weight(1f))
-                        FlatAmountField(flatNo = "1B", resident = residentNames["1B"] ?: "S.Vasikaran", value = f1bInput, onValueChange = { f1bInput = it }, modifier = Modifier.weight(1f))
-                    }
-                }
-
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FlatAmountField(flatNo = "2A", resident = residentNames["2A"] ?: "S. Hariprasad", value = f2aInput, onValueChange = { f2aInput = it }, modifier = Modifier.weight(1f))
-                        FlatAmountField(flatNo = "2B", resident = residentNames["2B"] ?: "P.Seenivasan", value = f2bInput, onValueChange = { f2bInput = it }, modifier = Modifier.weight(1f))
-                    }
-                }
-
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FlatAmountField(flatNo = "3A", resident = residentNames["3A"] ?: "A. Venkatesh Kumar", value = f3aInput, onValueChange = { f3aInput = it }, modifier = Modifier.weight(1f))
-                        FlatAmountField(flatNo = "3B", resident = residentNames["3B"] ?: "M.Mohan", value = f3bInput, onValueChange = { f3bInput = it }, modifier = Modifier.weight(1f))
-                    }
-                }
-
-                item {
-                    // Total Banner
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Emerald50),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
+                // Quick Presets Per Flat
+                Column {
+                    Text(
+                        text = "Quick Presets per Flat (6 flats):",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Total Collection:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Emerald900)
-                            Text("₹${liveTotal.toInt()}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Emerald700)
+                        items(presetPerFlatRates) { rate ->
+                            val isSelected = perFlatInput == rate
+                            SuggestionChip(
+                                onClick = {
+                                    perFlatInput = rate
+                                    val r = rate.toDoubleOrNull() ?: 0.0
+                                    totalAmountInput = (r * 6).toInt().toString()
+                                },
+                                label = { Text("₹$rate / flat", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                                colors = SuggestionChipDefaults.suggestionChipColors(
+                                    containerColor = if (isSelected) Amber500 else MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            )
                         }
                     }
                 }
 
-                item {
-                    OutlinedTextField(
-                        value = particularsInput,
-                        onValueChange = { particularsInput = it },
-                        label = { Text("Particulars / Purpose") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                // Total Calculation Display / Direct edit
+                Surface(
+                    color = Emerald50,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Total Building Collection",
+                                fontSize = 11.sp,
+                                color = Emerald700.copy(alpha = 0.8f)
+                            )
+                            Text(
+                                text = "₹$totalAmountInput (${perFlatInput.ifBlank { "0" }} × 6 flats)",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Emerald700
+                            )
+                        }
+
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Emerald600,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
 
-                item {
-                    OutlinedTextField(
-                        value = remarksInput,
-                        onValueChange = { remarksInput = it },
-                        label = { Text("Remarks / Notes (optional)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                OutlinedTextField(
+                    value = particularsInput,
+                    onValueChange = { particularsInput = it },
+                    label = { Text("Particulars / Description", fontSize = 12.sp) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = remarksInput,
+                    onValueChange = { remarksInput = it },
+                    label = { Text("Remarks / Notes (Optional)", fontSize = 12.sp) },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    val f1a = f1aInput.toDoubleOrNull() ?: 0.0
-                    val f1b = f1bInput.toDoubleOrNull() ?: 0.0
-                    val f2a = f2aInput.toDoubleOrNull() ?: 0.0
-                    val f2b = f2bInput.toDoubleOrNull() ?: 0.0
-                    val f3a = f3aInput.toDoubleOrNull() ?: 0.0
-                    val f3b = f3bInput.toDoubleOrNull() ?: 0.0
-                    onSave(
-                        yearInput.trim(),
-                        monthInput.trim(),
-                        particularsInput.trim().ifBlank { "Monthly Maintenance" },
-                        remarksInput.trim(),
-                        f1a, f1b, f2a, f2b, f3a, f3b
-                    )
+                    val total = totalAmountInput.toDoubleOrNull() ?: 0.0
+                    if (monthInput.isNotBlank() && total > 0) {
+                        onSave(yearInput.trim(), monthInput.trim(), total, particularsInput.trim(), remarksInput.trim())
+                    }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Amber500, contentColor = Slate900)
+                colors = ButtonDefaults.buttonColors(containerColor = Amber500, contentColor = Slate900),
+                modifier = Modifier.testTag("save_collection_button")
             ) {
-                Text(if (initialRecord != null) "Update" else "Save Collection", fontWeight = FontWeight.Bold)
+                Text("Save Record", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
@@ -718,23 +688,5 @@ fun MonthlyCollectionDialog(
                 Text("Cancel")
             }
         }
-    )
-}
-
-@Composable
-fun FlatAmountField(
-    flatNo: String,
-    resident: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text("$flatNo (₹)", fontSize = 11.sp) },
-        placeholder = { Text("0") },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = modifier
     )
 }
