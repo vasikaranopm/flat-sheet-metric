@@ -295,7 +295,16 @@ fun LoginConfigScreen(
 
                 if (!syncMessage.isNullOrEmpty()) {
                     Spacer(modifier = Modifier.height(12.dp))
-                    val isError = syncMessage.contains("Error", ignoreCase = true) || syncMessage.contains("Failed", ignoreCase = true) || syncMessage.contains("Denied", ignoreCase = true)
+                    val isError = syncMessage.contains("Reason", ignoreCase = true) ||
+                            syncMessage.contains("Error", ignoreCase = true) ||
+                            syncMessage.contains("Failed", ignoreCase = true) ||
+                            syncMessage.contains("Denied", ignoreCase = true) ||
+                            syncMessage.contains("Restricted", ignoreCase = true) ||
+                            syncMessage.contains("404", ignoreCase = true) ||
+                            syncMessage.contains("403", ignoreCase = true) ||
+                            syncMessage.contains("401", ignoreCase = true) ||
+                            syncMessage.contains("Unable", ignoreCase = true) ||
+                            syncMessage.contains("Invalid", ignoreCase = true)
                     Surface(
                         color = if (isError) Rose100 else Emerald100,
                         shape = RoundedCornerShape(8.dp),
@@ -303,20 +312,21 @@ fun LoginConfigScreen(
                     ) {
                         Row(
                             modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.Top
                         ) {
                             Icon(
                                 imageVector = if (isError) Icons.Default.ErrorOutline else Icons.Default.CheckCircle,
                                 contentDescription = null,
                                 tint = if (isError) Rose600 else Emerald600,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(18.dp).padding(top = 2.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = syncMessage,
                                 fontSize = 12.sp,
-                                color = if (isError) Rose600 else Emerald600,
-                                fontWeight = FontWeight.Medium
+                                color = if (isError) Rose800 else Emerald800,
+                                fontWeight = FontWeight.Medium,
+                                lineHeight = 16.sp
                             )
                         }
                     }

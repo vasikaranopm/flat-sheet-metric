@@ -117,6 +117,79 @@ fun DashboardScreen(
             }
         }
 
+        // Diagnostic Banner Indicator / Sync Message
+        if (!isLoading && syncMessage != null && syncMessage.isNotBlank()) {
+            val isError = syncMessage.contains("Reason", ignoreCase = true) ||
+                    syncMessage.contains("Error", ignoreCase = true) ||
+                    syncMessage.contains("Restricted", ignoreCase = true) ||
+                    syncMessage.contains("Denied", ignoreCase = true) ||
+                    syncMessage.contains("Failed", ignoreCase = true) ||
+                    syncMessage.contains("404", ignoreCase = true) ||
+                    syncMessage.contains("403", ignoreCase = true) ||
+                    syncMessage.contains("401", ignoreCase = true) ||
+                    syncMessage.contains("Unable", ignoreCase = true) ||
+                    syncMessage.contains("Invalid", ignoreCase = true)
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isError) Rose50 else Emerald50
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = if (isError) Icons.Default.Warning else Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = if (isError) Rose600 else Emerald600,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isError) "Google Sheet Sync Diagnostic" else "Sync Status",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isError) Rose900 else Emerald900
+                            )
+                        }
+                        if (isError) {
+                            TextButton(
+                                onClick = {
+                                    editSheetUrlInput = if (config.spreadsheetId.isNotBlank() && !config.spreadsheetId.startsWith("http")) {
+                                        "https://docs.google.com/spreadsheets/d/${config.spreadsheetId}/edit"
+                                    } else config.spreadsheetId
+                                    showEditSheetDialog = true
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text("Change URL", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Rose700)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = syncMessage,
+                        fontSize = 12.sp,
+                        color = if (isError) Rose800 else Emerald800,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+        }
+
         // Top Header Banner
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -374,7 +447,7 @@ fun DashboardScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // If no records exist at all, show Connect Sheet action card
+        // If no records exist at all, show Connect Sheet / Diagnostic action card
         if (expenses.isEmpty() && contributions.isEmpty()) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -387,35 +460,85 @@ fun DashboardScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Icon(
-                        imageVector = Icons.Default.CloudSync,
+                        imageVector = if (syncMessage != null && (syncMessage.contains("Reason", true) || syncMessage.contains("Error", true) || syncMessage.contains("Restricted", true))) Icons.Default.CloudOff else Icons.Default.CloudSync,
                         contentDescription = null,
-                        tint = Amber600,
+                        tint = if (syncMessage != null && (syncMessage.contains("Reason", true) || syncMessage.contains("Error", true) || syncMessage.contains("Restricted", true))) Rose600 else Amber600,
                         modifier = Modifier.size(48.dp)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Ready to Sync Google Sheet",
+                        text = if (config.spreadsheetId.isNotBlank()) "Google Sheet Data Not Loaded" else "Ready to Connect Google Sheet",
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Connect your Google Sheet maintenance ledger to load live records, expenses, and flat collections.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
+
+                    if (syncMessage != null && syncMessage.isNotBlank()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "Diagnostic Check Result:",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Amber600
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = syncMessage,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "Connect your Google Sheet maintenance ledger to load live records, expenses, and flat collections.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = onNavigateToConfig,
-                        colors = ButtonDefaults.buttonColors(containerColor = Amber500, contentColor = Slate900),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.testTag("connect_sheet_button")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Configure Google Sheet Link", fontWeight = FontWeight.Bold)
+                        Button(
+                            onClick = {
+                                editSheetUrlInput = if (config.spreadsheetId.isNotBlank() && !config.spreadsheetId.startsWith("http")) {
+                                    "https://docs.google.com/spreadsheets/d/${config.spreadsheetId}/edit"
+                                } else config.spreadsheetId
+                                showEditSheetDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Amber500, contentColor = Slate900),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("connect_sheet_button")
+                        ) {
+                            Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Update Sheet Link", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = onTriggerSync,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Retry Sync", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
                     }
                 }
             }

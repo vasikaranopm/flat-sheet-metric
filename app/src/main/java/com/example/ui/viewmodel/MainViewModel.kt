@@ -165,6 +165,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val defaultSheetId = extractSpreadsheetId(getDefaultSheetLinkEnv())
             val effectiveSheetId = currentConfig.spreadsheetId.ifBlank { defaultSheetId }
             val effectiveConfig = currentConfig.copy(spreadsheetId = effectiveSheetId)
+            _syncMessage.value = "Checking Google Sheet ($effectiveSheetId)..."
             val result = repository.syncGoogleSheet(effectiveConfig)
             _isLoading.value = false
             result.fold(
@@ -172,7 +173,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _syncMessage.value = msg
                 },
                 onFailure = { err ->
-                    _syncMessage.value = "Validation Error: ${err.message ?: "Failed to validate Google Sheet link"}"
+                    _syncMessage.value = "Google Sheet Sync Reason: ${err.message ?: "Failed to sync"}"
                 }
             )
         }
@@ -186,6 +187,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.updateConfig(updated)
             if (extractedId.isNotBlank()) {
                 _isLoading.value = true
+                _syncMessage.value = "Verifying updated Google Sheet ($extractedId)..."
                 val result = repository.syncGoogleSheet(updated)
                 _isLoading.value = false
                 result.fold(
@@ -193,7 +195,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _syncMessage.value = msg
                     },
                     onFailure = { err ->
-                        _syncMessage.value = "Validation Error: ${err.message ?: "Failed to validate updated Google Sheet link"}"
+                        _syncMessage.value = "Google Sheet Validation Reason: ${err.message ?: "Failed to validate updated Google Sheet link"}"
                     }
                 )
             } else {
@@ -227,6 +229,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.updateConfig(updated)
             // Immediately run validation and data loading
             _isLoading.value = true
+            _syncMessage.value = "Validating Google Sheet connection..."
             val syncResult = repository.syncGoogleSheet(updated)
             _isLoading.value = false
             syncResult.fold(
@@ -234,7 +237,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _syncMessage.value = msg
                 },
                 onFailure = { err ->
-                    _syncMessage.value = "Validation Failed: ${err.message}"
+                    _syncMessage.value = "Google Sheet Validation Reason: ${err.message}"
                 }
             )
         }
@@ -262,10 +265,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     lastSyncTime = System.currentTimeMillis()
                 )
                 repository.updateConfig(updated)
-                _syncMessage.value = "Signed in as $userEmail"
                 
                 if (effectiveSheetId.isNotBlank()) {
-                    triggerSync()
+                    _isLoading.value = true
+                    _syncMessage.value = "Checking Google Sheet data ($effectiveSheetId)..."
+                    val result = repository.syncGoogleSheet(updated)
+                    _isLoading.value = false
+                    result.fold(
+                        onSuccess = { msg ->
+                            _syncMessage.value = msg
+                        },
+                        onFailure = { err ->
+                            _syncMessage.value = "Google Sheet Sync Reason: ${err.message ?: "Failed to sync"}"
+                        }
+                    )
+                } else {
+                    _syncMessage.value = "Signed in as $userEmail (No Google Sheet configured)"
                 }
             }
         }

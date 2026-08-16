@@ -54,10 +54,23 @@ class MaintenanceRepository(private val database: AppDatabase) {
         database.collectionDao().insertCollectionRecord(record)
     }
 
+    suspend fun clearAllData() = withContext(Dispatchers.IO) {
+        database.expenseDao().clearAll()
+        database.yearlyReportDao().clearContributions()
+        database.yearlyReportDao().clearCategories()
+        database.yearlyReportDao().clearMajorWorks()
+        database.contactsDao().clearOwners()
+        database.contactsDao().clearServices()
+        database.collectionDao().clearAll()
+    }
+
     suspend fun syncGoogleSheet(config: GoogleSheetConfig): Result<String> = withContext(Dispatchers.IO) {
-        val sheetId = config.spreadsheetId.trim()
+        val rawInput = config.spreadsheetId.trim()
+        val sheetId = extractSpreadsheetId(rawInput)
+        val explicitGid = extractGid(rawInput)
+
         if (sheetId.isEmpty()) {
-            return@withContext Result.failure(Exception("Spreadsheet link is missing. Please paste your Google Sheet link."))
+            return@withContext Result.failure(Exception("No Google Sheet ID or URL configured. Please enter your Google Sheet link."))
         }
 
         // 1. Try Google Sheets API if API key exists
@@ -98,27 +111,19 @@ class MaintenanceRepository(private val database: AppDatabase) {
                     if (newExpenses.isNotEmpty()) {
                         database.expenseDao().clearAll()
                         database.expenseDao().insertExpenseRecords(newExpenses)
+                        database.configDao().saveConfig(
+                            config.copy(lastSyncTime = System.currentTimeMillis())
+                        )
+                        return@withContext Result.success("Access Verified! Synced ${newExpenses.size} expense records via Google Sheets API.")
                     }
-                    database.configDao().saveConfig(
-                        config.copy(lastSyncTime = System.currentTimeMillis())
-                    )
-                    return@withContext Result.success("Access Verified! Synced ${newExpenses.size} expense records via Google Sheets API.")
                 }
             } catch (e: Exception) {
                 // proceed to public CSV export check
             }
         }
 
-        // 2. Try Public Google Sheet CSV Export
+        // 2. Try Public Google Sheet CSV Export with detailed diagnostics
         try {
-            val rawInput = config.spreadsheetId.trim()
-            val sheetId = extractSpreadsheetId(rawInput)
-            val explicitGid = extractGid(rawInput)
-
-            if (sheetId.isEmpty()) {
-                return@withContext Result.failure(Exception("Spreadsheet link is missing. Please paste your Google Sheet link."))
-            }
-
             val urlsToTry = mutableListOf<String>()
             if (explicitGid != null) {
                 urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&gid=$explicitGid")
@@ -135,25 +140,28 @@ class MaintenanceRepository(private val database: AppDatabase) {
             val client = OkHttpClient.Builder()
                 .followRedirects(true)
                 .followSslRedirects(true)
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(10, TimeUnit.SECONDS)
+                .connectTimeout(12, TimeUnit.SECONDS)
+                .readTimeout(12, TimeUnit.SECONDS)
                 .build()
 
             var allExpenses = mutableListOf<ExpenseRecord>()
             var extractedTitle = config.spreadsheetTitle
             var successfulFetch = false
-            var errorMessage: String? = null
+            var diagnosedReason: String? = null
 
             for (targetUrl in urlsToTry.distinct()) {
                 try {
-                    val request = Request.Builder().url(targetUrl).header("User-Agent", "Mozilla/5.0").build()
+                    val request = Request.Builder()
+                        .url(targetUrl)
+                        .header("User-Agent", "Mozilla/5.0 (Android; Mobile)")
+                        .build()
                     val response = client.newCall(request).execute()
                     val statusCode = response.code
                     val body = response.body?.string() ?: ""
 
                     if (statusCode == 200) {
-                        if (body.contains("accounts.google.com") || body.contains("ServiceLogin") || body.contains("<!DOCTYPE html>")) {
-                            errorMessage = "Access Restricted: Please open Google Sheet -> Share -> set to 'Anyone with the link can view'."
+                        if (body.contains("accounts.google.com") || body.contains("ServiceLogin") || body.contains("<!DOCTYPE html>") || body.contains("<html>")) {
+                            diagnosedReason = "Access Restricted: Google Sheet requires sign-in. To allow the app to read it, open your Google Sheet -> Click 'Share' (top right) -> Under 'General access', change from 'Restricted' to 'Anyone with the link' (Viewer role)."
                             continue
                         }
                         successfulFetch = true
@@ -170,12 +178,16 @@ class MaintenanceRepository(private val database: AppDatabase) {
                             }
                         }
                     } else if (statusCode == 404) {
-                        errorMessage = "Spreadsheet Not Found (404). Please double-check your Google Sheet URL."
+                        diagnosedReason = "Spreadsheet Not Found (HTTP 404): The Google Sheet ID '$sheetId' does not exist or URL is invalid. Please check the URL."
                     } else if (statusCode == 403) {
-                        errorMessage = "Access Denied (403). Ensure sheet is shared as 'Anyone with the link can view'."
+                        diagnosedReason = "Access Denied (HTTP 403): Permissions are restricted. In Google Sheets, tap Share -> General Access -> 'Anyone with the link can view'."
+                    } else if (statusCode == 401) {
+                        diagnosedReason = "Unauthorized (HTTP 401): Google Sheet is private and requires viewer access for link sharing."
                     }
                 } catch (e: Exception) {
-                    if (errorMessage == null) errorMessage = e.localizedMessage
+                    if (diagnosedReason == null) {
+                        diagnosedReason = "Network Connection Issue: ${e.localizedMessage ?: "Could not connect to Google Sheets servers"}"
+                    }
                 }
             }
 
@@ -291,28 +303,15 @@ class MaintenanceRepository(private val database: AppDatabase) {
                         lastSyncTime = System.currentTimeMillis()
                     )
                 )
-                return@withContext Result.success("Access Verified & Synced! (${distinctExpenses.size} live records updated)")
+                return@withContext Result.success("Success: Synced ${distinctExpenses.size} live expenses & ${flatContributions.size} flat collections from Google Sheet!")
             } else if (successfulFetch) {
-                val finalTitle = if (extractedTitle.isNotBlank() && extractedTitle.length in 3..60) extractedTitle else config.spreadsheetTitle.ifBlank { "Apartment Maintenance Ledger" }
-                database.configDao().saveConfig(
-                    config.copy(
-                        spreadsheetTitle = finalTitle,
-                        lastSyncTime = System.currentTimeMillis()
-                    )
-                )
-                return@withContext Result.success("Google Sheet Connected ($finalTitle)")
+                return@withContext Result.failure(Exception("Sheet connected, but 0 expense records found. Please check that your Google Sheet has header columns (e.g., Date, Description/Particulars, Amount)."))
             } else {
-                return@withContext Result.failure(Exception(errorMessage ?: "Unable to fetch data from Google Sheet. Please check sheet URL and sharing settings."))
+                val failureMessage = diagnosedReason ?: "Unable to fetch data from Google Sheet. Please check the sheet link and verify it is shared with 'Anyone with the link can view'."
+                return@withContext Result.failure(Exception(failureMessage))
             }
         } catch (e: Exception) {
-            if (sheetId.length >= 15) {
-                database.configDao().saveConfig(
-                    config.copy(lastSyncTime = System.currentTimeMillis())
-                )
-                return@withContext Result.success("Google Sheet link saved ($sheetId). Ready to sync.")
-            } else {
-                return@withContext Result.failure(Exception("Invalid Google Sheet link or network error: ${e.localizedMessage}"))
-            }
+            return@withContext Result.failure(Exception("Sync Error: ${e.localizedMessage ?: "Unknown error while reading Google Sheet"}"))
         }
     }
 
