@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CollectionDao {
-    @Query("SELECT * FROM collection_records ORDER BY id DESC")
+    @Query("SELECT * FROM collection_records ORDER BY id ASC")
     fun getAllCollectionRecords(): Flow<List<CollectionRecord>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -14,6 +14,12 @@ interface CollectionDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCollectionRecord(record: CollectionRecord)
+
+    @Update
+    suspend fun updateCollectionRecord(record: CollectionRecord)
+
+    @Query("DELETE FROM collection_records WHERE id = :id")
+    suspend fun deleteCollectionRecord(id: Int)
 
     @Query("DELETE FROM collection_records")
     suspend fun clearAll()

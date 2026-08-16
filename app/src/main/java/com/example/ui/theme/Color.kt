@@ -19,6 +19,7 @@ val Teal600 = Color(0xFF0D9488)
 val Teal500 = Color(0xFF14B8A6)
 val Teal50 = Color(0xFFF0FDF4)
 
+val Emerald700 = Color(0xFF047857)
 val Emerald600 = Color(0xFF059669)
 val Emerald500 = Color(0xFF10B981)
 val Emerald100 = Color(0xDDF0FDF4)

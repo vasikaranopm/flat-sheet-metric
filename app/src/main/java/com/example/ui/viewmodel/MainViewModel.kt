@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 data class FinancialData(
+    val collectionRecords: List<CollectionRecord>,
     val collectionRecord: CollectionRecord?,
     val expenses: List<ExpenseRecord>,
     val yearlyContributions: List<YearlyContribution>,
@@ -24,6 +25,7 @@ data class DirectoryData(
 )
 
 data class MainUiState(
+    val collectionRecords: List<CollectionRecord> = emptyList(),
     val collectionRecord: CollectionRecord? = null,
     val expenses: List<ExpenseRecord> = emptyList(),
     val filteredExpenses: List<ExpenseRecord> = emptyList(),
@@ -56,7 +58,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val db = AppDatabase.getDatabase(application)
         repository = MaintenanceRepository(db)
 
-        val collectionsFlow = repository.collectionRecords.map { it.firstOrNull() }
+        val collectionsFlow = repository.collectionRecords
         val expensesFlow = repository.expenseRecords
         val contributionsFlow = repository.yearlyContributions
         val categoriesFlow = repository.yearlyExpenseCategories
@@ -77,8 +79,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             contributionsFlow,
             categoriesFlow,
             worksFlow
-        ) { col, exp, contrib, cat, works ->
-            FinancialData(col, exp, contrib, cat, works)
+        ) { colList, exp, contrib, cat, works ->
+            // If contributions are empty in DB, compute from collection records for all flats
+            val effectiveContribs = if (contrib.isNotEmpty()) {
+                contrib
+            } else {
+                val f1a = colList.sumOf { it.flat1AAmount }
+                val f1b = colList.sumOf { it.flat1BAmount }
+                val f2a = colList.sumOf { it.flat2AAmount }
+                val f2b = colList.sumOf { it.flat2BAmount }
+                val f3a = colList.sumOf { it.flat3AAmount }
+                val f3b = colList.sumOf { it.flat3BAmount }
+                listOf(
+                    YearlyContribution("1A", "M.Madhan Raj", f1a),
+                    YearlyContribution("1B", "S.Vasikaran", f1b),
+                    YearlyContribution("2A", "S. Hariprasad", f2a),
+                    YearlyContribution("2B", "P.Seenivasan", f2b),
+                    YearlyContribution("3A", "A. Venkatesh Kumar", f3a),
+                    YearlyContribution("3B", "M.Mohan", f3b)
+                )
+            }
+            FinancialData(colList, colList.firstOrNull(), exp, effectiveContribs, cat, works)
         }
 
         val directoryFlow = combine(
@@ -91,6 +112,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val baseDataFlow = combine(financialFlow, directoryFlow) { fin, dir ->
             MainUiState(
+                collectionRecords = fin.collectionRecords,
                 collectionRecord = fin.collectionRecord,
                 expenses = fin.expenses,
                 filteredExpenses = fin.expenses,
@@ -373,6 +395,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             repository.addCollectionRecord(record)
             _syncMessage.value = "Collection recorded for $month $year (Total: ₹$total)"
+        }
+    }
+
+    fun updateCollectionRecord(record: CollectionRecord) {
+        viewModelScope.launch {
+            repository.updateCollectionRecord(record)
+            _syncMessage.value = "Collection updated for ${record.month} ${record.year} (Total: ₹${record.totalAmount.toInt()})"
+        }
+    }
+
+    fun deleteCollectionRecord(id: Int) {
+        viewModelScope.launch {
+            repository.deleteCollectionRecord(id)
+            _syncMessage.value = "Collection record removed"
         }
     }
 }

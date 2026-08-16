@@ -54,6 +54,14 @@ class MaintenanceRepository(private val database: AppDatabase) {
         database.collectionDao().insertCollectionRecord(record)
     }
 
+    suspend fun updateCollectionRecord(record: CollectionRecord) {
+        database.collectionDao().updateCollectionRecord(record)
+    }
+
+    suspend fun deleteCollectionRecord(id: Int) {
+        database.collectionDao().deleteCollectionRecord(id)
+    }
+
     suspend fun clearAllData() = withContext(Dispatchers.IO) {
         database.expenseDao().clearAll()
         database.yearlyReportDao().clearContributions()
@@ -83,39 +91,49 @@ class MaintenanceRepository(private val database: AppDatabase) {
         fun fetchCsvForTab(tabNames: List<String>): Pair<String?, String?> {
             var lastError: String? = null
             for (tab in tabNames) {
-                val url = if (tab.isEmpty()) {
-                    if (explicitGid != null) "https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&gid=$explicitGid"
-                    else "https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv"
+                val candidateUrls = mutableListOf<String>()
+                if (tab.isEmpty()) {
+                    if (explicitGid != null) {
+                        candidateUrls.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&gid=$explicitGid")
+                        candidateUrls.add("https://docs.google.com/spreadsheets/d/$sheetId/export?format=csv&gid=$explicitGid")
+                    } else {
+                        candidateUrls.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv")
+                        candidateUrls.add("https://docs.google.com/spreadsheets/d/$sheetId/export?format=csv")
+                    }
                 } else {
-                    "https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=${java.net.URLEncoder.encode(tab, "UTF-8")}"
+                    val encodedTab = java.net.URLEncoder.encode(tab, "UTF-8")
+                    candidateUrls.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=$encodedTab")
+                    candidateUrls.add("https://docs.google.com/spreadsheets/d/$sheetId/export?format=csv&sheet=$encodedTab")
                 }
 
-                try {
-                    val request = Request.Builder()
-                        .url(url)
-                        .header("User-Agent", "Mozilla/5.0 (Android; Mobile)")
-                        .build()
-                    val response = client.newCall(request).execute()
-                    val code = response.code
-                    val body = response.body?.string() ?: ""
+                for (url in candidateUrls) {
+                    try {
+                        val request = Request.Builder()
+                            .url(url)
+                            .header("User-Agent", "Mozilla/5.0 (Android; Mobile)")
+                            .build()
+                        val response = client.newCall(request).execute()
+                        val code = response.code
+                        val body = response.body?.string() ?: ""
 
-                    if (code == 200) {
-                        if (body.contains("accounts.google.com") || body.contains("ServiceLogin") || body.contains("<!DOCTYPE html>") || body.contains("<html>")) {
-                            lastError = "Access Restricted: Google Sheet is private or requires sign-in. To allow the app to read it, open your Google Sheet -> Click 'Share' (top right) -> Under 'General access', change from 'Restricted' to 'Anyone with the link' (Viewer role)."
-                            continue
+                        if (code == 200) {
+                            if (body.contains("accounts.google.com") || body.contains("ServiceLogin") || body.contains("<!DOCTYPE html>") || body.contains("<html>")) {
+                                lastError = "Google Sheet is in Restricted Access mode. To allow the app to read it: In Google Sheets, tap 'Share' (top right) -> Under 'General access', change from 'Restricted' to 'Anyone with the link' (Viewer role)."
+                                continue
+                            }
+                            if (body.isNotBlank() && !body.startsWith("{\"status\":\"error\"")) {
+                                return body to null
+                            }
+                        } else if (code == 401) {
+                            lastError = "Google Sheet requires Link Sharing (HTTP 401): Sharing to user email only protects web-browser sign-in. To allow the app to sync, open the sheet -> tap 'Share' -> change 'General access' from 'Restricted' to 'Anyone with the link' (Viewer)."
+                        } else if (code == 403) {
+                            lastError = "Access Denied (HTTP 403): In Google Sheets, tap Share -> General Access -> set to 'Anyone with the link can view'."
+                        } else if (code == 404) {
+                            lastError = "Spreadsheet Not Found (HTTP 404): The Google Sheet ID '$sheetId' was not found. Please verify the URL."
                         }
-                        if (body.isNotBlank() && !body.startsWith("{\"status\":\"error\"")) {
-                            return body to null
-                        }
-                    } else if (code == 404) {
-                        lastError = "Spreadsheet Not Found (HTTP 404): The Google Sheet ID '$sheetId' was not found. Please verify the URL."
-                    } else if (code == 403) {
-                        lastError = "Access Denied (HTTP 403): Permissions are restricted. In Google Sheets, tap Share -> General Access -> 'Anyone with the link can view'."
-                    } else if (code == 401) {
-                        lastError = "Unauthorized (HTTP 401): Google Sheet requires viewer permissions for link sharing."
+                    } catch (e: Exception) {
+                        lastError = "Network Connection Issue: ${e.localizedMessage ?: "Could not connect to Google Sheets"}"
                     }
-                } catch (e: Exception) {
-                    lastError = "Network Connection Issue: ${e.localizedMessage ?: "Could not connect to Google Sheets"}"
                 }
             }
             return null to lastError

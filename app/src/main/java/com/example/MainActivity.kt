@@ -8,11 +8,11 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Receipt
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.PeopleAlt
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -57,11 +57,11 @@ class MainActivity : ComponentActivity() {
                 val currentRoute = navBackStackEntry?.destination?.route
 
                 val bottomNavItems = listOf(
-                    BottomNavItem("dashboard", "Overview", Icons.Default.Dashboard, "nav_dashboard"),
-                    BottomNavItem("expenses", "Expenses", Icons.Default.Receipt, "nav_expenses"),
+                    BottomNavItem("dashboard", "Overview", Icons.Default.Home, "nav_dashboard"),
+                    BottomNavItem("collections", "Collections", Icons.Default.AccountBalanceWallet, "nav_collections"),
+                    BottomNavItem("expenses", "Expenses", Icons.Default.ReceiptLong, "nav_expenses"),
                     BottomNavItem("yearly_report", "Yearly", Icons.Default.BarChart, "nav_yearly"),
-                    BottomNavItem("contacts", "Directory", Icons.Default.People, "nav_contacts"),
-                    BottomNavItem("login_config", "Sync Config", Icons.Default.Settings, "nav_config")
+                    BottomNavItem("contacts", "Directory", Icons.Default.PeopleAlt, "nav_contacts")
                 )
 
                 LaunchedEffect(uiState.syncMessage) {
@@ -95,8 +95,8 @@ class MainActivity : ComponentActivity() {
                                         onClick = {
                                             if (currentRoute != item.route) {
                                                 navController.navigate(item.route) {
-                                                    popUpTo(navController.graph.startDestinationId) {
-                                                        saveState = true
+                                                    popUpTo("dashboard") {
+                                                        saveState = false
                                                     }
                                                     launchSingleTop = true
                                                     restoreState = true
@@ -107,7 +107,7 @@ class MainActivity : ComponentActivity() {
                                         label = {
                                             Text(
                                                 text = item.label,
-                                                fontSize = 11.sp,
+                                                fontSize = 10.sp,
                                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
                                             )
                                         },
@@ -130,22 +130,35 @@ class MainActivity : ComponentActivity() {
                             composable("dashboard") {
                                 DashboardScreen(
                                     collectionRecord = uiState.collectionRecord,
+                                    collectionRecords = uiState.collectionRecords,
                                     expenses = uiState.expenses,
                                     contributions = uiState.yearlyContributions,
                                     config = uiState.config,
                                     isLoading = uiState.isLoading,
                                     syncMessage = uiState.syncMessage,
                                     onTriggerSync = { viewModel.triggerSync() },
-                                    onLogout = {
-                                        viewModel.logout(context)
-                                    },
-                                    onUpdateSheetUrl = { newUrl ->
-                                        viewModel.updateSheetUrl(newUrl)
-                                    },
+                                    onNavigateToCollections = { navController.navigate("collections") },
                                     onNavigateToExpenses = { navController.navigate("expenses") },
                                     onNavigateToYearlyReport = { navController.navigate("yearly_report") },
                                     onNavigateToContacts = { navController.navigate("contacts") },
-                                    onNavigateToConfig = { navController.navigate("login_config") }
+                                    onNavigateToConfig = { navController.navigate("settings") }
+                                )
+                            }
+
+                            composable("collections") {
+                                CollectionsScreen(
+                                    collectionRecords = uiState.collectionRecords,
+                                    ownerContacts = uiState.ownerContacts,
+                                    onAddCollection = { yr, mo, part, rem, f1a, f1b, f2a, f2b, f3a, f3b ->
+                                        viewModel.addCollectionRecord(yr, mo, part, rem, f1a, f1b, f2a, f2b, f3a, f3b)
+                                    },
+                                    onUpdateCollection = { record ->
+                                        viewModel.updateCollectionRecord(record)
+                                    },
+                                    onDeleteCollection = { id ->
+                                        viewModel.deleteCollectionRecord(id)
+                                    },
+                                    onNavigateBack = null
                                 )
                             }
 
@@ -201,8 +214,8 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
-                            composable("login_config") {
-                                LoginConfigScreen(
+                            composable("settings") {
+                                SettingsScreen(
                                     config = uiState.config,
                                     isLoading = uiState.isLoading,
                                     syncMessage = uiState.syncMessage,
@@ -216,11 +229,7 @@ class MainActivity : ComponentActivity() {
                                         viewModel.updateGcpConfig(spreadsheetId, apiKey, gcpProject, serviceAccount, userEmail, webClientId)
                                     },
                                     onTriggerSync = { viewModel.triggerSync() },
-                                    onContinueToDashboard = {
-                                        navController.navigate("dashboard") {
-                                            popUpTo("login_config") { inclusive = true }
-                                        }
-                                    }
+                                    onNavigateBack = { navController.popBackStack() }
                                 )
                             }
                         }
