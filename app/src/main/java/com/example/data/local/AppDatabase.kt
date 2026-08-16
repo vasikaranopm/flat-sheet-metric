@@ -94,7 +94,7 @@ abstract class AppDatabase : RoomDatabase() {
             db.configDao().saveConfig(
                 GoogleSheetConfig(
                     id = 1,
-                    spreadsheetTitle = "Apartment Maintenance Ledger",
+                    spreadsheetTitle = "Gomathi Ilam Thendral",
                     spreadsheetId = defaultSheetId,
                     gcpProjectId = "",
                     serviceAccountEmail = "",
@@ -104,6 +104,64 @@ abstract class AppDatabase : RoomDatabase() {
                     isLoggedIn = false,
                     isReadOnly = true,
                     lastSyncTime = 0L
+                )
+            )
+
+            // Seed initial 6 Owners of Gomathi Ilam Thendral
+            db.contactsDao().insertOwnerContacts(
+                listOf(
+                    OwnerContact(flatNo = "1A", residentName = "M.Madhan Raj", primaryContactNo = "", emergencyContactNo = ""),
+                    OwnerContact(flatNo = "1B", residentName = "S.Vasikaran", primaryContactNo = "9940381669", emergencyContactNo = ""),
+                    OwnerContact(flatNo = "2A", residentName = "S. Hariprasad", primaryContactNo = "", emergencyContactNo = ""),
+                    OwnerContact(flatNo = "2B", residentName = "P.Seenivasan", primaryContactNo = "", emergencyContactNo = ""),
+                    OwnerContact(flatNo = "3A", residentName = "A. Venkatesh Kumar", primaryContactNo = "", emergencyContactNo = ""),
+                    OwnerContact(flatNo = "3B", residentName = "M.Mohan", primaryContactNo = "", emergencyContactNo = "")
+                )
+            )
+
+            // Seed initial Monthly Collection Records as per actual structure
+            db.collectionDao().insertCollectionRecords(
+                listOf(
+                    CollectionRecord(
+                        id = 1,
+                        year = "2026",
+                        month = "July",
+                        particulars = "Monthly Maintenance",
+                        remarks = "1,000 for Regular Maintenace\n1,000 for Motor Sensor Contribution",
+                        flat1AAmount = 2000.0,
+                        flat1BAmount = 2000.0,
+                        flat2AAmount = 2000.0,
+                        flat2BAmount = 2000.0,
+                        flat3AAmount = 2000.0,
+                        flat3BAmount = 2000.0,
+                        totalAmount = 12000.0
+                    ),
+                    CollectionRecord(
+                        id = 2,
+                        year = "2026",
+                        month = "August",
+                        particulars = "Monthly Maintenance",
+                        remarks = "Details",
+                        flat1AAmount = 2400.0,
+                        flat1BAmount = 2400.0,
+                        flat2AAmount = 2400.0,
+                        flat2BAmount = 2400.0,
+                        flat3AAmount = 2400.0,
+                        flat3BAmount = 2400.0,
+                        totalAmount = 14400.0
+                    )
+                )
+            )
+
+            // Seed Yearly Contributions
+            db.yearlyReportDao().insertContributions(
+                listOf(
+                    YearlyContribution(flatNo = "1A", residentName = "M.Madhan Raj", amount2026 = 4400.0),
+                    YearlyContribution(flatNo = "1B", residentName = "S.Vasikaran", amount2026 = 4400.0),
+                    YearlyContribution(flatNo = "2A", residentName = "S. Hariprasad", amount2026 = 4400.0),
+                    YearlyContribution(flatNo = "2B", residentName = "P.Seenivasan", amount2026 = 4400.0),
+                    YearlyContribution(flatNo = "3A", residentName = "A. Venkatesh Kumar", amount2026 = 4400.0),
+                    YearlyContribution(flatNo = "3B", residentName = "M.Mohan", amount2026 = 4400.0)
                 )
             )
         }

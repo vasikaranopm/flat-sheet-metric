@@ -318,19 +318,19 @@ class MaintenanceRepository(private val database: AppDatabase) {
     )
 
     private fun parseCollectionSheet(csv: String): CollectionParseResult {
-        val lines = csv.lines().filter { it.isNotBlank() }
-        if (lines.isEmpty()) return CollectionParseResult(emptyList(), emptyList(), emptyList(), "")
+        val allRows = parseCsvTable(csv)
+        if (allRows.isEmpty()) return CollectionParseResult(emptyList(), emptyList(), emptyList(), "")
 
         var title = ""
         var headerIndex = -1
 
-        for (i in 0 until minOf(lines.size, 5)) {
-            val cols = parseCsvLine(lines[i]).map { it.lowercase().trim('"').trim() }
+        for (i in 0 until minOf(allRows.size, 5)) {
+            val cols = allRows[i].map { it.lowercase().trim('"').trim() }
             if (cols.any { it.contains("year") || it.contains("month") || it.contains("particular") || it.contains("1a") }) {
                 headerIndex = i
                 break
-            } else if (i == 0 && lines[0].isNotBlank()) {
-                val firstCell = parseCsvLine(lines[0]).firstOrNull()?.trim('"')?.trim() ?: ""
+            } else if (i == 0 && allRows[0].isNotEmpty()) {
+                val firstCell = allRows[0].firstOrNull()?.trim('"')?.trim() ?: ""
                 if (firstCell.isNotBlank() && firstCell.length in 3..60) {
                     title = firstCell.split("-").first().trim()
                 }
@@ -339,8 +339,8 @@ class MaintenanceRepository(private val database: AppDatabase) {
 
         if (headerIndex == -1) headerIndex = 0
 
-        val headerCols = parseCsvLine(lines[headerIndex]).map { it.trim('"').trim() }
-        val dataLines = lines.drop(headerIndex + 1)
+        val headerCols = allRows[headerIndex].map { it.trim('"').trim() }
+        val dataRows = allRows.drop(headerIndex + 1)
 
         val yearCol = headerCols.indexOfFirst { it.contains("year", ignoreCase = true) }
         val monthCol = headerCols.indexOfFirst { it.contains("month", ignoreCase = true) }
@@ -438,8 +438,7 @@ class MaintenanceRepository(private val database: AppDatabase) {
         var runningYear = "2026"
         var runningMonth = ""
 
-        for (line in dataLines) {
-            val cols = parseCsvLine(line)
+        for (cols in dataRows) {
             if (cols.isEmpty() || cols.all { it.isBlank() }) continue
 
             fun getVal(idx: Int): String {
@@ -563,7 +562,7 @@ class MaintenanceRepository(private val database: AppDatabase) {
             val mTotal = breakdown.mTotal
 
             if (mTotal > 0 || month.isNotBlank()) {
-                val remarksText = entries.map { it.remarks }.filter { it.isNotBlank() }.distinct().joinToString("; ")
+                val remarksText = entries.map { it.remarks }.filter { it.isNotBlank() }.distinct().joinToString("\n")
                 collections.add(
                     CollectionRecord(
                         id = collections.size + 1,
@@ -608,19 +607,19 @@ class MaintenanceRepository(private val database: AppDatabase) {
     )
 
     private fun parseExpenseSheet(csv: String): ExpenseParseResult {
-        val lines = csv.lines().filter { it.isNotBlank() }
-        if (lines.isEmpty()) return ExpenseParseResult(emptyList(), "")
+        val allRows = parseCsvTable(csv)
+        if (allRows.isEmpty()) return ExpenseParseResult(emptyList(), "")
 
         var title = ""
         var headerIndex = -1
 
-        for (i in 0 until minOf(lines.size, 5)) {
-            val cols = parseCsvLine(lines[i]).map { it.lowercase().trim('"').trim() }
+        for (i in 0 until minOf(allRows.size, 5)) {
+            val cols = allRows[i].map { it.lowercase().trim('"').trim() }
             if (cols.any { it.contains("particular") || it.contains("amount") || it.contains("vendor") || it.contains("payee") || it.contains("date") }) {
                 headerIndex = i
                 break
-            } else if (i == 0 && lines[0].isNotBlank()) {
-                val firstCell = parseCsvLine(lines[0]).firstOrNull()?.trim('"')?.trim() ?: ""
+            } else if (i == 0 && allRows[0].isNotEmpty()) {
+                val firstCell = allRows[0].firstOrNull()?.trim('"')?.trim() ?: ""
                 if (firstCell.isNotBlank() && firstCell.length in 3..60) {
                     title = firstCell.split("-").first().trim()
                 }
@@ -629,8 +628,8 @@ class MaintenanceRepository(private val database: AppDatabase) {
 
         if (headerIndex == -1) headerIndex = 0
 
-        val headerCols = parseCsvLine(lines[headerIndex]).map { it.lowercase().trim('"').trim() }
-        val dataLines = lines.drop(headerIndex + 1)
+        val headerCols = allRows[headerIndex].map { it.lowercase().trim('"').trim() }
+        val dataRows = allRows.drop(headerIndex + 1)
 
         val yearCol = headerCols.indexOfFirst { it.contains("year") || it.contains("yr") }
         val monthCol = headerCols.indexOfFirst { it.contains("month") || it.contains("mth") }
@@ -649,8 +648,7 @@ class MaintenanceRepository(private val database: AppDatabase) {
         var activeBalance = 12000.0
         val records = mutableListOf<ExpenseRecord>()
 
-        for (line in dataLines) {
-            val cols = parseCsvLine(line)
+        for (cols in dataRows) {
             if (cols.isEmpty() || cols.all { it.isBlank() }) continue
 
             fun getVal(idx: Int): String {
@@ -665,7 +663,7 @@ class MaintenanceRepository(private val database: AppDatabase) {
 
             val firstCell = cols.firstOrNull()?.trim('"')?.trim() ?: ""
             // Check if row is Opening Balance header e.g. "Opening Balance - 1 Jul 2026"
-            if (firstCell.contains("Opening Balance", ignoreCase = true) || line.contains("Opening Balance", ignoreCase = true)) {
+            if (firstCell.contains("Opening Balance", ignoreCase = true) || cols.any { it.contains("Opening Balance", ignoreCase = true) }) {
                 if (firstCell.contains("Jul", ignoreCase = true)) activeMonth = "July"
                 else if (firstCell.contains("Aug", ignoreCase = true)) activeMonth = "August"
                 else if (firstCell.contains("Sep", ignoreCase = true)) activeMonth = "September"
@@ -768,8 +766,8 @@ class MaintenanceRepository(private val database: AppDatabase) {
     )
 
     private fun parseContactsSheet(csv: String): ContactsParseResult {
-        val lines = csv.lines().filter { it.isNotBlank() }
-        if (lines.isEmpty()) return ContactsParseResult(emptyList(), emptyList())
+        val allRows = parseCsvTable(csv)
+        if (allRows.isEmpty()) return ContactsParseResult(emptyList(), emptyList())
 
         val owners = mutableListOf<OwnerContact>()
         val services = mutableListOf<ServiceContact>()
@@ -778,26 +776,25 @@ class MaintenanceRepository(private val database: AppDatabase) {
         var ownerHeaderCols = listOf<String>()
         var serviceHeaderCols = listOf<String>()
 
-        for (line in lines) {
-            val cols = parseCsvLine(line).map { it.trim('"').trim() }
+        for (cols in allRows) {
             if (cols.isEmpty() || cols.all { it.isBlank() }) continue
 
-            val first = cols.first().lowercase()
-            if (first.contains("owner") || first.contains("resident") && !first.contains("name")) {
+            val first = cols.first().lowercase().trim('"').trim()
+            if (first.contains("owner") || (first.contains("resident") && !first.contains("name"))) {
                 currentSection = "OWNERS"
                 continue
-            } else if (first.contains("service") || first.contains("vendor") && !first.contains("type")) {
+            } else if (first.contains("service") || (first.contains("vendor") && !first.contains("type"))) {
                 currentSection = "SERVICES"
                 continue
             }
 
             if (cols.any { it.contains("flat", ignoreCase = true) || it.contains("resident name", ignoreCase = true) }) {
                 currentSection = "OWNERS"
-                ownerHeaderCols = cols.map { it.lowercase() }
+                ownerHeaderCols = cols.map { it.lowercase().trim('"').trim() }
                 continue
             } else if (cols.any { it.contains("service type", ignoreCase = true) || it.contains("contact person", ignoreCase = true) }) {
                 currentSection = "SERVICES"
-                serviceHeaderCols = cols.map { it.lowercase() }
+                serviceHeaderCols = cols.map { it.lowercase().trim('"').trim() }
                 continue
             }
 
@@ -807,10 +804,10 @@ class MaintenanceRepository(private val database: AppDatabase) {
                 val primaryPhoneCol = ownerHeaderCols.indexOfFirst { it.contains("primary") || it.contains("phone") || it.contains("contact") }.let { if (it == -1) 2 else it }
                 val emergencyPhoneCol = ownerHeaderCols.indexOfFirst { it.contains("emergency") }.let { if (it == -1) 3 else it }
 
-                val flatNo = cols.getOrNull(flatNoCol) ?: ""
-                val name = cols.getOrNull(nameCol) ?: ""
-                val primaryPhone = cols.getOrNull(primaryPhoneCol) ?: ""
-                val emergencyPhone = cols.getOrNull(emergencyPhoneCol) ?: ""
+                val flatNo = cols.getOrNull(flatNoCol)?.trim('"')?.trim() ?: ""
+                val name = cols.getOrNull(nameCol)?.trim('"')?.trim() ?: ""
+                val primaryPhone = cols.getOrNull(primaryPhoneCol)?.trim('"')?.trim() ?: ""
+                val emergencyPhone = cols.getOrNull(emergencyPhoneCol)?.trim('"')?.trim() ?: ""
 
                 if (flatNo.isNotBlank() && flatNo.length <= 6 && !flatNo.contains("flat", ignoreCase = true)) {
                     owners.add(
@@ -828,10 +825,10 @@ class MaintenanceRepository(private val database: AppDatabase) {
                 val phoneCol = serviceHeaderCols.indexOfFirst { it.contains("phone") || it.contains("mobile") || it.contains("no") }.let { if (it == -1) 2 else it }
                 val remarksCol = serviceHeaderCols.indexOfFirst { it.contains("remark") || it.contains("detail") || it.contains("note") }.let { if (it == -1) 3 else it }
 
-                val sType = cols.getOrNull(typeCol) ?: ""
-                val sPerson = cols.getOrNull(personCol) ?: ""
-                val sPhone = cols.getOrNull(phoneCol) ?: ""
-                val sRemarks = cols.getOrNull(remarksCol) ?: ""
+                val sType = cols.getOrNull(typeCol)?.trim('"')?.trim() ?: ""
+                val sPerson = cols.getOrNull(personCol)?.trim('"')?.trim() ?: ""
+                val sPhone = cols.getOrNull(phoneCol)?.trim('"')?.trim() ?: ""
+                val sRemarks = cols.getOrNull(remarksCol)?.trim('"')?.trim() ?: ""
 
                 if (sType.isNotBlank() && !sType.contains("service type", ignoreCase = true)) {
                     services.add(
@@ -856,8 +853,8 @@ class MaintenanceRepository(private val database: AppDatabase) {
     )
 
     private fun parseYearlyReportSheet(csv: String): YearlyReportParseResult {
-        val lines = csv.lines().filter { it.isNotBlank() }
-        if (lines.isEmpty()) return YearlyReportParseResult(emptyList(), emptyList(), emptyList())
+        val allRows = parseCsvTable(csv)
+        if (allRows.isEmpty()) return YearlyReportParseResult(emptyList(), emptyList(), emptyList())
 
         val contributions = mutableListOf<YearlyContribution>()
         val categories = mutableListOf<YearlyExpenseCategory>()
@@ -865,11 +862,10 @@ class MaintenanceRepository(private val database: AppDatabase) {
 
         var currentSection = "" // "CONTRIBUTION", "EXPENSE", "MAJOR_WORKS"
 
-        for (line in lines) {
-            val cols = parseCsvLine(line).map { it.trim('"').trim() }
+        for (cols in allRows) {
             if (cols.isEmpty() || cols.all { it.isBlank() }) continue
 
-            val first = cols.first().lowercase()
+            val first = cols.first().lowercase().trim('"').trim()
             if (first.contains("contribution summary") || first.contains("contribution")) {
                 currentSection = "CONTRIBUTION"
                 continue
@@ -895,7 +891,7 @@ class MaintenanceRepository(private val database: AppDatabase) {
             }
 
             if (currentSection == "CONTRIBUTION") {
-                val flatRaw = cols.getOrNull(0) ?: ""
+                val flatRaw = cols.getOrNull(0)?.trim('"')?.trim() ?: ""
                 val amt = parseAmount(1).let { if (it > 0) it else parseAmount(2) }
                 if (flatRaw.isNotBlank() && !flatRaw.contains("total", ignoreCase = true)) {
                     val flatNo = if (flatRaw.contains("-")) flatRaw.substringBefore("-").trim() else flatRaw
@@ -909,7 +905,7 @@ class MaintenanceRepository(private val database: AppDatabase) {
                     )
                 }
             } else if (currentSection == "EXPENSE") {
-                val catRaw = cols.getOrNull(0) ?: ""
+                val catRaw = cols.getOrNull(0)?.trim('"')?.trim() ?: ""
                 val amt = parseAmount(1).let { if (it > 0) it else parseAmount(2) }
                 if (catRaw.isNotBlank() && !catRaw.contains("total", ignoreCase = true)) {
                     categories.add(
@@ -920,7 +916,7 @@ class MaintenanceRepository(private val database: AppDatabase) {
                     )
                 }
             } else if (currentSection == "MAJOR_WORKS") {
-                val workRaw = cols.getOrNull(0) ?: ""
+                val workRaw = cols.getOrNull(0)?.trim('"')?.trim() ?: ""
                 val amt = parseAmount(1).let { if (it > 0) it else parseAmount(2) }
                 if (workRaw.isNotBlank() && !workRaw.contains("total", ignoreCase = true)) {
                     majorWorks.add(
@@ -934,6 +930,59 @@ class MaintenanceRepository(private val database: AppDatabase) {
         }
 
         return YearlyReportParseResult(contributions, categories, majorWorks)
+    }
+
+    private fun parseCsvTable(text: String): List<List<String>> {
+        val rows = mutableListOf<List<String>>()
+        val currentRow = mutableListOf<String>()
+        val currentCell = StringBuilder()
+        var inQuotes = false
+        var i = 0
+        val len = text.length
+
+        // Check if tab-separated or comma-separated
+        val headerSample = text.take(500)
+        val delimiter = if (headerSample.contains('\t')) '\t' else ','
+
+        while (i < len) {
+            val c = text[i]
+            when {
+                c == '"' -> {
+                    if (inQuotes && i + 1 < len && text[i + 1] == '"') {
+                        currentCell.append('"')
+                        i++ // skip escaped quote
+                    } else {
+                        inQuotes = !inQuotes
+                    }
+                }
+                c == delimiter && !inQuotes -> {
+                    currentRow.add(currentCell.toString().trim())
+                    currentCell.setLength(0)
+                }
+                (c == '\n' || c == '\r') && !inQuotes -> {
+                    if (c == '\r' && i + 1 < len && text[i + 1] == '\n') {
+                        i++
+                    }
+                    currentRow.add(currentCell.toString().trim())
+                    currentCell.setLength(0)
+                    if (currentRow.any { it.isNotBlank() }) {
+                        rows.add(ArrayList(currentRow))
+                    }
+                    currentRow.clear()
+                }
+                else -> {
+                    currentCell.append(c)
+                }
+            }
+            i++
+        }
+        if (currentCell.isNotEmpty() || currentRow.isNotEmpty()) {
+            currentRow.add(currentCell.toString().trim())
+            if (currentRow.any { it.isNotBlank() }) {
+                rows.add(ArrayList(currentRow))
+            }
+        }
+        return rows
     }
 
     private fun parseCsvLine(line: String): List<String> {
