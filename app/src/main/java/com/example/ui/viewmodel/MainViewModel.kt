@@ -66,10 +66,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val configFlow = repository.googleSheetConfig.map { config ->
             val c = config ?: GoogleSheetConfig()
             val defaultSheetId = extractSpreadsheetId(getDefaultSheetLinkEnv())
-            val updatedConfig = if (c.spreadsheetId.isBlank() && defaultSheetId.isNotBlank()) {
+            if (c.spreadsheetId.isBlank() && defaultSheetId.isNotBlank()) {
                 c.copy(spreadsheetId = defaultSheetId)
             } else c
-            if (updatedConfig.userEmail.isBlank()) updatedConfig.copy(isLoggedIn = false) else updatedConfig
         }
 
         val financialFlow = combine(
@@ -142,14 +141,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = MainUiState()
         )
-
-        viewModelScope.launch {
-            val config = repository.googleSheetConfig.firstOrNull()
-            val sheetId = config?.spreadsheetId?.ifBlank { extractSpreadsheetId(getDefaultSheetLinkEnv()) } ?: extractSpreadsheetId(getDefaultSheetLinkEnv())
-            if (sheetId.isNotBlank()) {
-                triggerSync()
-            }
-        }
     }
 
     fun onSearchQueryChanged(query: String) {
@@ -166,14 +157,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun triggerSync() {
         viewModelScope.launch {
-            _isLoading.value = true
             val currentConfig = repository.googleSheetConfig.firstOrNull() ?: uiState.value.config
-            val defaultSheetId = extractSpreadsheetId(getDefaultSheetLinkEnv())
-            val effectiveConfig = if (currentConfig.spreadsheetId.isBlank() && defaultSheetId.isNotBlank()) {
-                currentConfig.copy(spreadsheetId = defaultSheetId)
-            } else {
-                currentConfig
+            if (!currentConfig.isLoggedIn || currentConfig.userEmail.isBlank()) {
+                return@launch
             }
+            _isLoading.value = true
+            val defaultSheetId = extractSpreadsheetId(getDefaultSheetLinkEnv())
+            val effectiveSheetId = currentConfig.spreadsheetId.ifBlank { defaultSheetId }
+            val effectiveConfig = currentConfig.copy(spreadsheetId = effectiveSheetId)
             val result = repository.syncGoogleSheet(effectiveConfig)
             _isLoading.value = false
             result.fold(
@@ -184,6 +175,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _syncMessage.value = "Validation Error: ${err.message ?: "Failed to validate Google Sheet link"}"
                 }
             )
+        }
+    }
+
+    fun updateSheetUrl(newUrlOrId: String) {
+        viewModelScope.launch {
+            val currentConfig = repository.googleSheetConfig.firstOrNull() ?: uiState.value.config
+            val extractedId = extractSpreadsheetId(newUrlOrId).trim()
+            val updated = currentConfig.copy(spreadsheetId = extractedId)
+            repository.updateConfig(updated)
+            if (extractedId.isNotBlank()) {
+                _isLoading.value = true
+                val result = repository.syncGoogleSheet(updated)
+                _isLoading.value = false
+                result.fold(
+                    onSuccess = { msg ->
+                        _syncMessage.value = msg
+                    },
+                    onFailure = { err ->
+                        _syncMessage.value = "Validation Error: ${err.message ?: "Failed to validate updated Google Sheet link"}"
+                    }
+                )
+            } else {
+                _syncMessage.value = "Google Sheet link removed"
+            }
         }
     }
 
@@ -233,28 +248,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isLoggedIn = false
                 )
                 repository.updateConfig(updated)
-                _syncMessage.value = "Signed out"
+                _syncMessage.value = null
             } else {
-                val updated = uiState.value.config.copy(
+                val currentConfig = repository.googleSheetConfig.firstOrNull() ?: uiState.value.config
+                val defaultSheetId = extractSpreadsheetId(getDefaultSheetLinkEnv())
+                val effectiveSheetId = currentConfig.spreadsheetId.ifBlank { defaultSheetId }
+                
+                val updated = currentConfig.copy(
                     userEmail = userEmail,
-                    webClientId = if (webClientId.isNotEmpty()) webClientId else uiState.value.config.webClientId,
+                    webClientId = if (webClientId.isNotEmpty()) webClientId else currentConfig.webClientId,
+                    spreadsheetId = effectiveSheetId,
                     isLoggedIn = true,
                     lastSyncTime = System.currentTimeMillis()
                 )
                 repository.updateConfig(updated)
-                _syncMessage.value = "Logged in as $userEmail"
+                _syncMessage.value = "Signed in as $userEmail"
+                
+                if (effectiveSheetId.isNotBlank()) {
+                    triggerSync()
+                }
             }
         }
     }
 
     fun logout(context: android.content.Context? = null) {
         viewModelScope.launch {
-            val updated = uiState.value.config.copy(
+            val currentConfig = repository.googleSheetConfig.firstOrNull() ?: uiState.value.config
+            val updated = currentConfig.copy(
                 userEmail = "",
                 isLoggedIn = false
             )
             repository.updateConfig(updated)
-            _syncMessage.value = "Signed out"
+            _syncMessage.value = null
         }
         context?.let { ctx ->
             try {

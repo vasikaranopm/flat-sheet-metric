@@ -69,12 +69,8 @@ abstract class AppDatabase : RoomDatabase() {
                         val defaultSheetId = extractSpreadsheetId(getDefaultSheetLinkEnv())
                         if (currentConfig == null) {
                             populateInitialData(database)
-                        } else {
-                            val updatedConfig = if (currentConfig.spreadsheetId.isBlank() && defaultSheetId.isNotBlank()) {
-                                currentConfig.copy(spreadsheetId = defaultSheetId, userEmail = "", isLoggedIn = true)
-                            } else {
-                                currentConfig.copy(userEmail = "", isLoggedIn = true)
-                            }
+                        } else if (currentConfig.spreadsheetId.isBlank() && defaultSheetId.isNotBlank()) {
+                            val updatedConfig = currentConfig.copy(spreadsheetId = defaultSheetId)
                             database.configDao().saveConfig(updatedConfig)
                         }
                     }
@@ -88,14 +84,14 @@ abstract class AppDatabase : RoomDatabase() {
             db.configDao().saveConfig(
                 GoogleSheetConfig(
                     id = 1,
-                    spreadsheetTitle = "Gomathi Ilam Thendral - Maintenance Record Book",
+                    spreadsheetTitle = "Apartment Maintenance Ledger",
                     spreadsheetId = defaultSheetId,
                     gcpProjectId = "",
                     serviceAccountEmail = "",
                     apiKey = "",
                     webClientId = "",
                     userEmail = "",
-                    isLoggedIn = true,
+                    isLoggedIn = false,
                     isReadOnly = true,
                     lastSyncTime = 0L
                 )

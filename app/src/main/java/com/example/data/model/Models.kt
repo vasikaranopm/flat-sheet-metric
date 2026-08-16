@@ -6,74 +6,74 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "collection_records")
 data class CollectionRecord(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val year: String = "2026",
-    val month: String = "July",
-    val particulars: String = "Monthly Maintenance",
-    val remarks: String = "1,000 for Regular Maintenance\n1,000 for Motor Sensor Contribution",
-    val flat1AAmount: Double = 2000.0,
-    val flat1BAmount: Double = 2000.0,
-    val flat2AAmount: Double = 2000.0,
-    val flat2BAmount: Double = 2000.0,
-    val flat3AAmount: Double = 2000.0,
-    val flat3BAmount: Double = 2000.0,
-    val totalAmount: Double = 12000.0
+    val year: String = "",
+    val month: String = "",
+    val particulars: String = "Maintenance Collections",
+    val remarks: String = "",
+    val flat1AAmount: Double = 0.0,
+    val flat1BAmount: Double = 0.0,
+    val flat2AAmount: Double = 0.0,
+    val flat2BAmount: Double = 0.0,
+    val flat3AAmount: Double = 0.0,
+    val flat3BAmount: Double = 0.0,
+    val totalAmount: Double = 0.0
 )
 
 @Entity(tableName = "expense_records")
 data class ExpenseRecord(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val year: String = "2026",
-    val month: String = "July",
-    val dateDay: String,
-    val particulars: String,
-    val remarks: String,
-    val amount: Double,
-    val vendorPayee: String,
+    val year: String = "",
+    val month: String = "",
+    val dateDay: String = "",
+    val particulars: String = "",
+    val remarks: String = "",
+    val amount: Double = 0.0,
+    val vendorPayee: String = "",
     val billAvailable: String = "N/A",
     val picture: String = "N/A",
-    val balance: Double,
-    val category: String
+    val balance: Double = 0.0,
+    val category: String = "General"
 )
 
 @Entity(tableName = "yearly_contributions")
 data class YearlyContribution(
     @PrimaryKey val flatNo: String,
-    val residentName: String,
-    val amount2026: Double
+    val residentName: String = "",
+    val amount2026: Double = 0.0
 )
 
 @Entity(tableName = "yearly_expense_categories")
 data class YearlyExpenseCategory(
     @PrimaryKey val category: String,
-    val amount2026: Double
+    val amount2026: Double = 0.0
 )
 
 @Entity(tableName = "major_works")
 data class MajorWork(
     @PrimaryKey val description: String,
-    val amount2026: Double
+    val amount2026: Double = 0.0
 )
 
 @Entity(tableName = "owner_contacts")
 data class OwnerContact(
     @PrimaryKey val flatNo: String,
-    val residentName: String,
-    val primaryContactNo: String,
+    val residentName: String = "",
+    val primaryContactNo: String = "",
     val emergencyContactNo: String = ""
 )
 
 @Entity(tableName = "service_contacts")
 data class ServiceContact(
     @PrimaryKey val serviceType: String,
-    val contactPerson: String,
-    val phoneNo: String,
-    val remarks: String
+    val contactPerson: String = "",
+    val phoneNo: String = "",
+    val remarks: String = ""
 )
 
 @Entity(tableName = "google_sheet_config")
 data class GoogleSheetConfig(
     @PrimaryKey val id: Int = 1,
-    val spreadsheetTitle: String = "Gomathi Ilam Thendral - Maintenance Record Book",
+    val spreadsheetTitle: String = "Apartment Maintenance Ledger",
     val spreadsheetId: String = "",
     val gcpProjectId: String = "",
     val serviceAccountEmail: String = "",
@@ -108,3 +108,4 @@ fun getDefaultSheetLinkEnv(): String {
         ""
     }
 }
+

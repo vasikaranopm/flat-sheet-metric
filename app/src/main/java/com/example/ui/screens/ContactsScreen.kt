@@ -39,8 +39,8 @@ fun ContactsScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Gomathi Ilam Thendral", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text("Apartment & Service Directory", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        Text("Apartment & Vendor Directory", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text("Contacts & Service Directory", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                     }
                 },
                 navigationIcon = {
@@ -63,107 +63,178 @@ fun ContactsScreen(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Flat Owners (${ownerContacts.size})", fontWeight = FontWeight.Bold) },
-                    icon = { Icon(Icons.Default.Home, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    text = { Text("Vendors & Payees (${serviceContacts.size})", fontWeight = FontWeight.Bold) },
+                    icon = { Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("Service Contacts", fontWeight = FontWeight.Bold) },
-                    icon = { Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    text = { Text("Flats & Residents (${ownerContacts.size})", fontWeight = FontWeight.Bold) },
+                    icon = { Icon(Icons.Default.Home, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 )
             }
 
             if (selectedTab == 0) {
-                LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(ownerContacts) { owner ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("owner_contact_${owner.flatNo}"),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                if (serviceContacts.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.Engineering,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                modifier = Modifier.size(56.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "No vendor contacts found in sheet",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Vendors and payees are automatically extracted from your Google Sheet.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(serviceContacts) { service ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Surface(
-                                        color = Slate900,
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Text(
-                                            text = owner.flatNo,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.width(12.dp))
-
-                                    Column {
-                                        Text(owner.residentName, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                                        Text(owner.primaryContactNo, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-                                    }
-                                }
-
-                                IconButton(
-                                    onClick = {
-                                        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${owner.primaryContactNo}"))
-                                        context.startActivity(intent)
-                                    },
-                                    modifier = Modifier.testTag("dial_button_${owner.flatNo}")
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Icon(Icons.Default.Call, contentDescription = "Call", tint = Emerald600)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(service.serviceType, fontSize = 12.sp, color = Amber600, fontWeight = FontWeight.Bold)
+                                        Text(service.contactPerson, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                        if (service.remarks.isNotBlank()) {
+                                            Text(
+                                                service.remarks,
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                                modifier = Modifier.padding(top = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    if (service.phoneNo.isNotBlank() && service.phoneNo != "--") {
+                                        FilledIconButton(
+                                            onClick = {
+                                                val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${service.phoneNo}"))
+                                                context.startActivity(intent)
+                                            },
+                                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Emerald600)
+                                        ) {
+                                            Icon(Icons.Default.Phone, contentDescription = "Call Vendor", tint = Color.White)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(serviceContacts) { service ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                if (ownerContacts.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.Apartment,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                modifier = Modifier.size(56.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "No flat resident records found",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Flat collections and resident entries from your Google Sheet will appear here.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(ownerContacts) { owner ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(service.serviceType, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Amber600)
-                                    if (service.contactPerson != "--") {
-                                        Text("Contact: ${service.contactPerson}", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                        Text("Phone: ${service.phoneNo}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-                                        if (service.remarks != "--") {
-                                            Text("Note: ${service.remarks}", fontSize = 11.sp, color = Teal600)
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(
+                                            color = Slate900,
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text(
+                                                text = owner.flatNo,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                            )
                                         }
-                                    } else {
-                                        Text("Contact info not provided yet", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
-                                    }
-                                }
 
-                                if (service.phoneNo != "--" && service.phoneNo.isNotEmpty()) {
-                                    IconButton(
-                                        onClick = {
-                                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${service.phoneNo}"))
-                                            context.startActivity(intent)
+                                        Spacer(modifier = Modifier.width(12.dp))
+
+                                        Column {
+                                            Text(owner.residentName, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                if (owner.primaryContactNo.isNotBlank() && owner.primaryContactNo != "--") owner.primaryContactNo else "Resident Record",
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            )
                                         }
-                                    ) {
-                                        Icon(Icons.Default.Call, contentDescription = "Call", tint = Emerald600)
+                                    }
+
+                                    if (owner.primaryContactNo.isNotBlank() && owner.primaryContactNo != "--") {
+                                        FilledIconButton(
+                                            onClick = {
+                                                val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${owner.primaryContactNo}"))
+                                                context.startActivity(intent)
+                                            },
+                                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Slate900)
+                                        ) {
+                                            Icon(Icons.Default.Phone, contentDescription = "Call", tint = Color.White)
+                                        }
                                     }
                                 }
                             }

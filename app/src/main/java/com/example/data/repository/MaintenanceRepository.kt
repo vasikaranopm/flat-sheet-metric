@@ -180,17 +180,17 @@ class MaintenanceRepository(private val database: AppDatabase) {
             }
 
             if (allExpenses.isNotEmpty()) {
-                val distinctExpenses = allExpenses.distinctBy { "${it.month}_${it.dateDay}_${it.particulars}_${it.amount}" }
+                val distinctExpenses = allExpenses.distinctBy { "${it.month}_${it.dateDay}_${it.particulars}_${it.amount}_${it.vendorPayee}" }
                     .mapIndexed { index, record -> record.copy(id = index + 1) }
 
                 database.expenseDao().clearAll()
                 database.expenseDao().insertExpenseRecords(distinctExpenses)
 
                 // 1. Dynamic Yearly Categories
-                val categoriesMap = distinctExpenses.groupBy { it.category }
+                val categoriesMap = distinctExpenses.groupBy { it.category.ifBlank { "General" } }
                 val categoryRecords = categoriesMap.map { (catName, list) ->
                     YearlyExpenseCategory(
-                        category = catName.ifBlank { "General" },
+                        category = catName,
                         amount2026 = list.sumOf { it.amount }
                     )
                 }
@@ -198,7 +198,7 @@ class MaintenanceRepository(private val database: AppDatabase) {
                 database.yearlyReportDao().insertExpenseCategories(categoryRecords)
 
                 // 2. Dynamic Major Capital Works
-                val majorKeywords = listOf("sensor", "motor", "alteration", "repair", "paint", "replace", "plumbing", "electrical", "tank", "clean", "work", "purchase", "installation", "service")
+                val majorKeywords = listOf("sensor", "motor", "alteration", "repair", "paint", "replace", "plumbing", "electrical", "tank", "clean", "work", "purchase", "installation", "service", "capital", "upgrade")
                 val majorWorkRecords = distinctExpenses.filter { exp ->
                     exp.amount >= 1000 || majorKeywords.any { exp.particulars.contains(it, ignoreCase = true) || exp.category.contains(it, ignoreCase = true) }
                 }.map { exp ->
@@ -208,84 +208,83 @@ class MaintenanceRepository(private val database: AppDatabase) {
                     )
                 }
                 database.yearlyReportDao().clearMajorWorks()
-                database.yearlyReportDao().insertMajorWorks(majorWorkRecords)
-
-                // 3. Dynamic Flat Collections & Yearly Contributions
-                var flat1A = 0.0; var flat1B = 0.0
-                var flat2A = 0.0; var flat2B = 0.0
-                var flat3A = 0.0; var flat3B = 0.0
-                var foundCollections = false
-
-                for (exp in distinctExpenses) {
-                    val p = exp.particulars.lowercase()
-                    if (p.contains("1a")) { flat1A += exp.amount; foundCollections = true }
-                    if (p.contains("1b")) { flat1B += exp.amount; foundCollections = true }
-                    if (p.contains("2a")) { flat2A += exp.amount; foundCollections = true }
-                    if (p.contains("2b")) { flat2B += exp.amount; foundCollections = true }
-                    if (p.contains("3a")) { flat3A += exp.amount; foundCollections = true }
-                    if (p.contains("3b")) { flat3B += exp.amount; foundCollections = true }
+                if (majorWorkRecords.isNotEmpty()) {
+                    database.yearlyReportDao().insertMajorWorks(majorWorkRecords)
                 }
 
-                val flatContributions = mutableListOf<YearlyContribution>()
-                val flatsList = listOf("1A" to flat1A, "1B" to flat1B, "2A" to flat2A, "2B" to flat2B, "3A" to flat3A, "3B" to flat3B)
+                // 3. Dynamic Flat Collections & Yearly Contributions
+                val flatContributionsMap = mutableMapOf<String, Pair<String, Double>>()
+                val flatRegex = Regex("""(?i)\b(?:flat|unit|door|apt|villa|no\.?|#)?\s*([0-9]{1,4}[a-zA-Z]?|[a-zA-Z][0-9]{1,3})\b""")
 
-                for ((fNo, amt) in flatsList) {
-                    val calculatedAmt = if (amt > 0) amt else 2000.0
-                    flatContributions.add(YearlyContribution(flatNo = fNo, residentName = "Flat $fNo", amount2026 = calculatedAmt))
+                for (exp in distinctExpenses) {
+                    val combined = "${exp.particulars} ${exp.vendorPayee} ${exp.remarks}"
+                    val match = flatRegex.find(combined)
+                    if (match != null) {
+                        val flatKey = match.groupValues[1].uppercase()
+                        val current = flatContributionsMap[flatKey]
+                        val residentName = if (exp.vendorPayee.isNotBlank() && exp.vendorPayee != "--" && exp.vendorPayee != "General Vendor") exp.vendorPayee else "Flat $flatKey Resident"
+                        val addedAmt = (current?.second ?: 0.0) + exp.amount
+                        flatContributionsMap[flatKey] = residentName to addedAmt
+                    }
+                }
+
+                val flatContributions = flatContributionsMap.map { (flatNo, pair) ->
+                    YearlyContribution(
+                        flatNo = flatNo,
+                        residentName = pair.first,
+                        amount2026 = pair.second
+                    )
+                }
+
+                database.yearlyReportDao().clearContributions()
+                if (flatContributions.isNotEmpty()) {
+                    database.yearlyReportDao().insertContributions(flatContributions)
                 }
 
                 val totalCollectedVal = flatContributions.sumOf { it.amount2026 }
-
                 database.collectionDao().insertCollectionRecord(
                     CollectionRecord(
                         id = 1,
-                        flat1AAmount = flatContributions.firstOrNull { it.flatNo == "1A" }?.amount2026 ?: 2000.0,
-                        flat1BAmount = flatContributions.firstOrNull { it.flatNo == "1B" }?.amount2026 ?: 2000.0,
-                        flat2AAmount = flatContributions.firstOrNull { it.flatNo == "2A" }?.amount2026 ?: 2000.0,
-                        flat2BAmount = flatContributions.firstOrNull { it.flatNo == "2B" }?.amount2026 ?: 2000.0,
-                        flat3AAmount = flatContributions.firstOrNull { it.flatNo == "3A" }?.amount2026 ?: 2000.0,
-                        flat3BAmount = flatContributions.firstOrNull { it.flatNo == "3B" }?.amount2026 ?: 2000.0,
+                        year = distinctExpenses.firstOrNull()?.year ?: "",
+                        month = distinctExpenses.firstOrNull()?.month ?: "",
+                        particulars = "Maintenance Fund & Collections",
+                        remarks = if (flatContributions.isNotEmpty()) "${flatContributions.size} Flats Recorded" else "Direct Live Sync",
                         totalAmount = totalCollectedVal
                     )
                 )
 
-                database.yearlyReportDao().clearContributions()
-                database.yearlyReportDao().insertContributions(flatContributions)
-
-                // 4. Dynamic Contacts (Owners & Vendors/Services)
+                // 4. Dynamic Contacts (Vendors & Payees from live sheet)
                 val extractedServices = distinctExpenses
-                    .filter { it.vendorPayee.isNotBlank() && it.vendorPayee != "--" && it.vendorPayee != "N/A" }
-                    .distinctBy { it.vendorPayee }
+                    .filter { it.vendorPayee.isNotBlank() && it.vendorPayee != "--" && it.vendorPayee != "N/A" && it.vendorPayee != "General Vendor" }
+                    .distinctBy { it.vendorPayee.lowercase() }
                     .map { exp ->
                         ServiceContact(
                             serviceType = exp.category.ifBlank { "Maintenance Service" },
                             contactPerson = exp.vendorPayee,
-                            phoneNo = "--",
-                            remarks = "Service Vendor for ${exp.particulars}"
+                            phoneNo = "",
+                            remarks = "Vendor/Payee for ${exp.particulars}"
                         )
                     }
 
-                val defaultServiceTypes = listOf(
-                    ServiceContact("Cleaning & Sanitation", "Housekeeping Vendor", "--", "Common Area Housekeeping"),
-                    ServiceContact("Motor & Electrical", "Electrical Technician", "--", "Water Sensor & Pump Maintenance"),
-                    ServiceContact("Plumbing & Lines", "Plumbing Technician", "--", "Common Plumbing Works")
-                )
-
                 database.contactsDao().clearServices()
-                database.contactsDao().insertServiceContacts(if (extractedServices.isNotEmpty()) extractedServices else defaultServiceTypes)
+                if (extractedServices.isNotEmpty()) {
+                    database.contactsDao().insertServiceContacts(extractedServices)
+                }
 
-                val extractedOwners = listOf("1A", "1B", "2A", "2B", "3A", "3B").map { flat ->
+                val extractedOwners = flatContributions.map { c ->
                     OwnerContact(
-                        flatNo = flat,
-                        residentName = "Flat $flat Resident",
-                        primaryContactNo = "--",
+                        flatNo = c.flatNo,
+                        residentName = c.residentName.ifBlank { "Flat ${c.flatNo}" },
+                        primaryContactNo = "",
                         emergencyContactNo = ""
                     )
                 }
                 database.contactsDao().clearOwners()
-                database.contactsDao().insertOwnerContacts(extractedOwners)
+                if (extractedOwners.isNotEmpty()) {
+                    database.contactsDao().insertOwnerContacts(extractedOwners)
+                }
 
-                val finalTitle = if (extractedTitle.isNotBlank()) extractedTitle else "Apartment Maintenance"
+                val finalTitle = if (extractedTitle.isNotBlank() && extractedTitle.length in 3..60) extractedTitle else config.spreadsheetTitle.ifBlank { "Apartment Maintenance Ledger" }
                 database.configDao().saveConfig(
                     config.copy(
                         spreadsheetTitle = finalTitle,
@@ -294,7 +293,7 @@ class MaintenanceRepository(private val database: AppDatabase) {
                 )
                 return@withContext Result.success("Access Verified & Synced! (${distinctExpenses.size} live records updated)")
             } else if (successfulFetch) {
-                val finalTitle = if (extractedTitle.isNotBlank()) extractedTitle else "Apartment Maintenance"
+                val finalTitle = if (extractedTitle.isNotBlank() && extractedTitle.length in 3..60) extractedTitle else config.spreadsheetTitle.ifBlank { "Apartment Maintenance Ledger" }
                 database.configDao().saveConfig(
                     config.copy(
                         spreadsheetTitle = finalTitle,
@@ -303,14 +302,14 @@ class MaintenanceRepository(private val database: AppDatabase) {
                 )
                 return@withContext Result.success("Google Sheet Connected ($finalTitle)")
             } else {
-                return@withContext Result.failure(Exception(errorMessage ?: "Unable to fetch data from Google Sheet."))
+                return@withContext Result.failure(Exception(errorMessage ?: "Unable to fetch data from Google Sheet. Please check sheet URL and sharing settings."))
             }
         } catch (e: Exception) {
             if (sheetId.length >= 15) {
                 database.configDao().saveConfig(
                     config.copy(lastSyncTime = System.currentTimeMillis())
                 )
-                return@withContext Result.success("Google Sheet link saved ($sheetId). Local database ready.")
+                return@withContext Result.success("Google Sheet link saved ($sheetId). Ready to sync.")
             } else {
                 return@withContext Result.failure(Exception("Invalid Google Sheet link or network error: ${e.localizedMessage}"))
             }

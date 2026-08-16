@@ -30,15 +30,13 @@ fun LoginConfigScreen(
     config: GoogleSheetConfig,
     isLoading: Boolean = false,
     syncMessage: String? = null,
-    onLogin: (String, String) -> Unit,
+    onLogout: () -> Unit = {},
+    onUpdateSheetUrl: (String) -> Unit = {},
     onSaveGcpConfig: (String, String, String, String, String, String) -> Unit,
     onTriggerSync: () -> Unit,
     onContinueToDashboard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var emailInput by remember(config.userEmail) { mutableStateOf(config.userEmail) }
-    var webClientIdInput by remember(config.webClientId) { mutableStateOf(config.webClientId) }
-    var spreadsheetIdInput by remember(config.spreadsheetId) { mutableStateOf(config.spreadsheetId) }
     var sheetLinkInput by remember(config.spreadsheetId) {
         mutableStateOf(
             if (config.spreadsheetId.isNotBlank() && !config.spreadsheetId.startsWith("http")) {
@@ -46,20 +44,16 @@ fun LoginConfigScreen(
             } else if (config.spreadsheetId.isNotBlank()) {
                 config.spreadsheetId
             } else {
-                getDefaultSheetLinkEnv()
+                val def = getDefaultSheetLinkEnv()
+                if (def.isNotBlank()) "https://docs.google.com/spreadsheets/d/$def/edit" else ""
             }
         )
     }
-    var apiKeyInput by remember(config.apiKey) { mutableStateOf(config.apiKey) }
-    var serviceAccountInput by remember(config.serviceAccountEmail) { mutableStateOf(config.serviceAccountEmail) }
-    var gcpProjectInput by remember(config.gcpProjectId) { mutableStateOf(config.gcpProjectId) }
-
-    var showGcpSetupModal by remember { mutableStateOf(false) }
 
     val lastSyncedText = remember(config.lastSyncTime) {
         if (config.lastSyncTime > 0) {
-            val sdf = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
-            "Last synced: ${sdf.format(Date(config.lastSyncTime))}"
+            val sdf = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+            "Last Synced: ${sdf.format(Date(config.lastSyncTime))}"
         } else {
             "Not synced yet"
         }
@@ -74,115 +68,86 @@ fun LoginConfigScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // App Header Branding
+        // Branding Header
         Box(
             modifier = Modifier
-                .size(72.dp)
+                .size(64.dp)
                 .clip(CircleShape)
                 .background(Amber500),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Default.Apartment,
-                contentDescription = "Apartment Icon",
+                imageVector = Icons.Default.CloudSync,
+                contentDescription = "Sync Icon",
                 tint = Slate900,
-                modifier = Modifier.size(40.dp)
+                modifier = Modifier.size(36.dp)
             )
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = config.spreadsheetTitle.ifBlank { "Apartment Maintenance" },
-            fontSize = 22.sp,
+            text = "Google Sheet Live Sync",
+            fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground
         )
 
         Text(
-            text = "Maintenance Collection & Expense Dashboard",
+            text = "Connect your Google Sheet maintenance ledger to sync live financial records.",
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 16.dp)
+            modifier = Modifier.padding(horizontal = 8.dp)
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        if (!config.isLoggedIn) {
-            GoogleLoginScreen(
-                userEmail = config.userEmail,
-                webClientId = config.webClientId,
-                onLogin = { email, clientVal ->
-                    emailInput = email
-                    webClientIdInput = clientVal
-                    onLogin(email, clientVal)
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-        } else {
-            // Already signed in card
+        if (config.userEmail.isNotBlank()) {
+            Spacer(modifier = Modifier.height(14.dp))
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(14.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            color = Emerald100,
-                            shape = CircleShape,
-                            modifier = Modifier.size(44.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = "Signed In",
-                                    tint = Emerald600,
-                                    modifier = Modifier.size(26.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = null,
+                            tint = Emerald500,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
                             Text(
-                                text = "Signed In Account",
-                                fontSize = 12.sp,
+                                text = "Authenticated User",
+                                fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )
                             Text(
                                 text = config.userEmail,
-                                fontSize = 15.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Emerald600
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    OutlinedButton(
+                        onClick = onLogout,
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                     ) {
-                        Text(
-                            text = "Google Account Authenticated",
-                            fontSize = 12.sp,
-                            color = Emerald600,
-                            fontWeight = FontWeight.Medium
-                        )
-                        OutlinedButton(
-                            onClick = { onLogin("", webClientIdInput) },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                        ) {
-                            Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Sign Out", fontSize = 12.sp)
-                        }
+                        Icon(Icons.Default.Logout, contentDescription = "Logout", modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Sign Out", fontSize = 12.sp)
                     }
                 }
             }
@@ -190,7 +155,7 @@ fun LoginConfigScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Google Sheet Status & Validation Card
+        // Google Sheet Link Configuration Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -201,31 +166,69 @@ fun LoginConfigScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Default.TableChart,
-                        contentDescription = "Sheet",
+                        contentDescription = null,
                         tint = Amber600,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(24.dp)
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Google Sheet Configuration",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                        Text(
-                            text = if (config.spreadsheetId.isNotBlank()) "Sheet ID: ${config.spreadsheetId.take(12)}..." else "No Sheet Link Set",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    AssistChip(
-                        onClick = { showGcpSetupModal = true },
-                        label = { Text("Link Config", fontSize = 11.sp) },
-                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Google Sheet Link / URL",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = sheetLinkInput,
+                    onValueChange = { sheetLinkInput = it },
+                    placeholder = { Text("https://docs.google.com/spreadsheets/d/...") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(20.dp))
+                    },
+                    trailingIcon = {
+                        if (sheetLinkInput.isNotEmpty()) {
+                            IconButton(onClick = { sheetLinkInput = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("sheet_url_input_field")
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Sharing Instructions Callout
+                Surface(
+                    color = Amber50,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            tint = Amber600,
+                            modifier = Modifier.size(18.dp).padding(top = 2.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "To enable live syncing, in Google Sheets tap Share -> General Access -> set to 'Anyone with the link can view'.",
+                            fontSize = 11.sp,
+                            color = Slate800,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Text(
                     text = lastSyncedText,
@@ -233,8 +236,9 @@ fun LoginConfigScreen(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
+                // Sync / Action Buttons
                 if (isLoading) {
                     Row(
                         modifier = Modifier
@@ -251,7 +255,7 @@ fun LoginConfigScreen(
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "Validating Google Sheet access & loading data...",
+                            text = "Connecting to Google Sheet & fetching live data...",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             color = Slate900
@@ -263,16 +267,20 @@ fun LoginConfigScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         OutlinedButton(
-                            onClick = { showGcpSetupModal = true },
+                            onClick = {
+                                onUpdateSheetUrl(sheetLinkInput)
+                            },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Edit Link", fontSize = 13.sp)
+                            Text("Save Link", fontSize = 13.sp)
                         }
 
                         Button(
-                            onClick = onTriggerSync,
+                            onClick = {
+                                onUpdateSheetUrl(sheetLinkInput)
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = Slate900, contentColor = Color.White),
                             modifier = Modifier
                                 .weight(1f)
@@ -280,13 +288,13 @@ fun LoginConfigScreen(
                         ) {
                             Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Sync Data", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text("Sync Live Data", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
 
                 if (!syncMessage.isNullOrEmpty()) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     val isError = syncMessage.contains("Error", ignoreCase = true) || syncMessage.contains("Failed", ignoreCase = true) || syncMessage.contains("Denied", ignoreCase = true)
                     Surface(
                         color = if (isError) Rose100 else Emerald100,
@@ -316,7 +324,7 @@ fun LoginConfigScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         Button(
             onClick = onContinueToDashboard,
@@ -324,94 +332,14 @@ fun LoginConfigScreen(
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp)
+                .height(50.dp)
                 .testTag("view_dashboard_button")
         ) {
-            Text("Open Maintenance Dashboard", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("Open Maintenance Dashboard", fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.width(8.dp))
             Icon(Icons.Default.ArrowForward, contentDescription = null)
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
     }
-
-    if (showGcpSetupModal) {
-        AlertDialog(
-            onDismissRequest = { if (!isLoading) showGcpSetupModal = false },
-            title = { Text("Configure Google Sheet Link") },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        "Paste your Google Sheet view/edit link below to test access & load data:",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                    OutlinedTextField(
-                        value = sheetLinkInput,
-                        onValueChange = { sheetLinkInput = it },
-                        label = { Text("Google Sheet Link / URL") },
-                        placeholder = { Text("https://docs.google.com/spreadsheets/d/...") },
-                        singleLine = true,
-                        leadingIcon = {
-                            Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(20.dp))
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("sheet_url_input_field")
-                    )
-
-                    if (isLoading) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(top = 4.dp)
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Testing sheet access & loading records...", fontSize = 12.sp, color = Amber600)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val extractedId = extractSpreadsheetId(sheetLinkInput)
-                        spreadsheetIdInput = extractedId
-                        onSaveGcpConfig(
-                            extractedId,
-                            apiKeyInput,
-                            gcpProjectInput,
-                            serviceAccountInput,
-                            emailInput,
-                            webClientIdInput
-                        )
-                        showGcpSetupModal = false
-                    },
-                    enabled = !isLoading && sheetLinkInput.isNotBlank()
-                ) {
-                    Text("Validate & Save Link")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showGcpSetupModal = false },
-                    enabled = !isLoading
-                ) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-}
-
-private fun extractSpreadsheetId(input: String): String {
-    val trimmed = input.trim()
-    val pattern = Regex("/spreadsheets/d/([a-zA-Z0-9-_]+)")
-    val match = pattern.find(trimmed)
-    return match?.groupValues?.get(1) ?: trimmed
 }

@@ -43,8 +43,8 @@ fun YearlyReportScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("2026 Yearly Financial Report", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text("Gomathi Ilam Thendral • Annual Summary", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        Text("Yearly Financial Report", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text("Annual Summary & Category Breakdown", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                     }
                 },
                 navigationIcon = {
@@ -72,7 +72,7 @@ fun YearlyReportScreen(
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
-                    Text("2026 Financial Overview", fontSize = 14.sp, color = Amber100)
+                    Text("Annual Financial Overview", fontSize = 14.sp, color = Amber100)
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -95,186 +95,162 @@ fun YearlyReportScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Section 1: Contribution Summary Table
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Contribution Summary", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                        Text("Year 2026", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Amber600)
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Table Header
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Slate100, shape = RoundedCornerShape(6.dp))
-                            .padding(8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Resident", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Slate800)
-                        Text("Amount (₹)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Slate800)
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    contributions.forEach { item ->
+            // Section 1: Contribution Summary Table (If contributions exist)
+            if (contributions.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 6.dp, horizontal = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(
-                                    color = Slate900,
-                                    shape = RoundedCornerShape(4.dp)
-                                ) {
-                                    Text(
-                                        text = item.flatNo,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(item.residentName, fontSize = 13.sp)
-                            }
-                            Text("₹${item.amount2026.toInt()}", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Divider(color = Slate100, thickness = 0.5.dp)
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Grand Total Collection", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("₹${totalContributions.toInt()}", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Emerald600)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Section 2: Expense Summary Table
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Expense Summary by Category", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                        Text("Year 2026", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Amber600)
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Slate100, shape = RoundedCornerShape(6.dp))
-                            .padding(8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Category", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Slate800)
-                        Text("Amount Spent (₹)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Slate800)
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    categories.forEach { item ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 6.dp, horizontal = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(item.category, fontSize = 13.sp)
-                            Text(
-                                text = if (item.amount2026 > 0) "₹${item.amount2026.toInt()}" else "-",
-                                fontSize = 13.sp,
-                                fontWeight = if (item.amount2026 > 0) FontWeight.Bold else FontWeight.Normal,
-                                color = if (item.amount2026 > 0) MaterialTheme.colorScheme.onSurface else Slate800.copy(alpha = 0.4f)
-                            )
-                        }
-                        Divider(color = Slate100, thickness = 0.5.dp)
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Grand Total Expense", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("₹${totalExpenses.toInt()}", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Rose600)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Section 3: Major Capital Works
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Build, contentDescription = null, tint = Amber600)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Major Capital Works 2026", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    majorWorks.forEach { work ->
-                        Surface(
-                            color = Amber100.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
                         ) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Emerald600, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Annual Collections by Flat", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Table Header
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Flat", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Resident / Payee", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Paid Amount", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        contributions.forEach { item ->
                             Row(
-                                modifier = Modifier.padding(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(item.flatNo, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text(item.residentName.ifBlank { "Flat ${item.flatNo}" }, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                                Text("₹${item.amount2026.toInt()}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Emerald600)
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Section 2: Expense Category Breakdown
+            if (categories.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.PieChart, contentDescription = null, tint = Amber600, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Expense Breakdown by Category", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        categories.forEach { cat ->
+                            val pct = if (totalExpenses > 0) (cat.amount2026 / totalExpenses * 100).toInt() else 0
+                            Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(cat.category, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    Text("₹${cat.amount2026.toInt()} ($pct%)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                LinearProgressIndicator(
+                                    progress = { if (totalExpenses > 0) (cat.amount2026 / totalExpenses).toFloat() else 0f },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp),
+                                    color = Amber500,
+                                    trackColor = Slate100
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Section 3: Major Capital Works
+            if (majorWorks.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Build, contentDescription = null, tint = Rose600, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Major Maintenance & Capital Works", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        majorWorks.forEach { work ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(work.description, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Text(work.description, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                 }
-                                Text("₹${work.amount2026.toInt()}", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = Amber600)
+                                Text("₹${work.amount2026.toInt()}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Rose600)
                             }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                         }
                     }
                 }
             }
+
+            if (contributions.isEmpty() && categories.isEmpty() && majorWorks.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No annual breakdown data yet.\nSync your Google Sheet in the Sync Config tab.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }

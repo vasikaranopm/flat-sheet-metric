@@ -2,8 +2,8 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -17,12 +17,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.ExpenseRecord
@@ -46,26 +45,22 @@ fun ExpenseScreen(
 ) {
     val categories = remember(allExpensesForMonths) {
         val uniqueCats = allExpensesForMonths.map { it.category }.filter { it.isNotBlank() }.distinct()
-        listOf("All") + if (uniqueCats.isEmpty()) listOf("Cleaning", "Alteration/Additional work", "Common Purchases") else uniqueCats
+        listOf("All") + uniqueCats
     }
 
     val availableMonths = remember(allExpensesForMonths) {
         val uniqueMonths = allExpensesForMonths.map { it.month }.filter { it.isNotBlank() }.distinct()
-        listOf("All Months") + if (uniqueMonths.isEmpty()) listOf("July", "August") else uniqueMonths
+        listOf("All Months") + uniqueMonths
     }
 
     val totalExpenseSum = expenses.sumOf { it.amount }
-    val cleaningSum = expenses.filter { it.category.contains("Cleaning", ignoreCase = true) }.sumOf { it.amount }
-    val alterationSum = expenses.filter { it.category.contains("Alteration", ignoreCase = true) || it.category.contains("Motor", ignoreCase = true) }.sumOf { it.amount }
-    val purchasesSum = (totalExpenseSum - cleaningSum - alterationSum).coerceAtLeast(0.0)
-
     var selectedExpenseItem by remember { mutableStateOf<ExpenseRecord?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
 
     var newParticulars by remember { mutableStateOf("") }
     var newAmount by remember { mutableStateOf("") }
     var newVendor by remember { mutableStateOf("") }
-    var newCategory by remember { mutableStateOf("Cleaning") }
+    var newCategory by remember { mutableStateOf("Maintenance") }
     var newRemarks by remember { mutableStateOf("") }
     var newDay by remember { mutableStateOf("") }
 
@@ -86,8 +81,12 @@ fun ExpenseScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Common Expense Record", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text("Gomathi Ilam Thendral • July 2026", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        Text("Expense Ledger", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (selectedMonth != "All Months") "Live Records • $selectedMonth" else "All Live Records (${expenses.size})",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
                     }
                 },
                 navigationIcon = {
@@ -104,7 +103,7 @@ fun ExpenseScreen(
                         modifier = Modifier.padding(end = 12.dp)
                     ) {
                         Text(
-                            text = "Spent ₹${totalExpenseSum.toInt()}",
+                            text = "Total ₹${totalExpenseSum.toInt()}",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = Rose600,
@@ -130,7 +129,7 @@ fun ExpenseScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = onSearchQueryChanged,
-                    placeholder = { Text("Search by vendor, item, or remarks...") },
+                    placeholder = { Text("Search vendor, description, or notes...") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
@@ -145,240 +144,212 @@ fun ExpenseScreen(
                         .testTag("expense_search_field")
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Month Filter Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Month:",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(end = 6.dp)
-                    )
+                if (availableMonths.size > 2) {
+                    Spacer(modifier = Modifier.height(8.dp))
                     LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        contentPadding = PaddingValues(vertical = 2.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(availableMonths) { m ->
+                        items(availableMonths) { month ->
                             FilterChip(
-                                selected = (selectedMonth == m),
-                                onClick = { onMonthSelected(m) },
-                                label = { Text(m, fontSize = 11.sp, fontWeight = if (selectedMonth == m) FontWeight.Bold else FontWeight.Normal) },
-                                leadingIcon = if (selectedMonth == m) {
-                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp)) }
-                                } else null,
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Amber500,
-                                    selectedLabelColor = Color.Black
-                                )
+                                selected = selectedMonth == month,
+                                onClick = { onMonthSelected(month) },
+                                label = { Text(month, fontSize = 12.sp) }
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Category Filter Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Category:",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(end = 6.dp)
-                    )
+                if (categories.size > 2) {
+                    Spacer(modifier = Modifier.height(6.dp))
                     LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        contentPadding = PaddingValues(vertical = 2.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         items(categories) { cat ->
                             FilterChip(
-                                selected = (selectedCategory == cat),
+                                selected = selectedCategory == cat,
                                 onClick = { onCategorySelected(cat) },
-                                label = { Text(cat, fontSize = 11.sp) },
-                                leadingIcon = if (selectedCategory == cat) {
-                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp)) }
-                                } else null
+                                label = { Text(cat, fontSize = 12.sp) }
                             )
                         }
                     }
                 }
             }
 
-            LazyColumn(
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Category Visual Breakdown Bar Chart Card
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = "Category Budget Allocation",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            // Custom Horizontal Donut/Bar Chart
-                            if (totalExpenseSum > 0) {
-                                Column {
-                                    Canvas(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(18.dp)
-                                            .clip(RoundedCornerShape(9.dp))
-                                    ) {
-                                        val totalWidth = size.width
-                                        val cWidth = (cleaningSum / totalExpenseSum).toFloat() * totalWidth
-                                        val aWidth = (alterationSum / totalExpenseSum).toFloat() * totalWidth
-                                        val pWidth = (purchasesSum / totalExpenseSum).toFloat() * totalWidth
-
-                                        // Cleaning Segment (Amber)
-                                        drawRect(
-                                            color = Color(0xFFF59E0B),
-                                            topLeft = Offset(0f, 0f),
-                                            size = Size(cWidth, size.height)
-                                        )
-
-                                        // Alteration Segment (Teal)
-                                        drawRect(
-                                            color = Color(0xFF0D9488),
-                                            topLeft = Offset(cWidth, 0f),
-                                            size = Size(aWidth, size.height)
-                                        )
-
-                                        // Common Purchases Segment (Rose)
-                                        drawRect(
-                                            color = Color(0xFFE11D48),
-                                            topLeft = Offset(cWidth + aWidth, 0f),
-                                            size = Size(pWidth, size.height)
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.height(12.dp))
-
-                                    // Category Legend Items
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        LegendBadge("Cleaning", "₹${cleaningSum.toInt()}", Color(0xFFF59E0B))
-                                        LegendBadge("Alteration", "₹${alterationSum.toInt()}", Color(0xFF0D9488))
-                                        LegendBadge("Purchases", "₹${purchasesSum.toInt()}", Color(0xFFE11D48))
-                                    }
-                                }
-                            }
-                        }
+            if (expenses.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.ReceiptLong,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                            modifier = Modifier.size(56.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = if (searchQuery.isNotBlank()) "No expenses match your search" else "No live expense records found",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Sync your Google Sheet in the Sync Config tab.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        )
                     }
                 }
-
-                // Opening Balance Row
-                item {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = Slate900,
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.AccountBalance, contentDescription = null, tint = Amber500)
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text("Opening Balance", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                                    Text("01-Jul-2026", fontSize = 11.sp, color = Amber100)
-                                }
-                            }
-
-                            Text("₹12,000", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = Amber500)
-                        }
-                    }
-                }
-
-                item {
-                    Text(
-                        text = "Expense Activity Timeline",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
-                    )
-                }
-
-                // Expense Item Cards or Empty State
-                if (expenses.isEmpty()) {
-                    item {
+            } else {
+                LazyColumn(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(expenses, key = { it.id }) { expense ->
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 16.dp),
+                                .clickable { selectedExpenseItem = expense }
+                                .testTag("expense_card_${expense.id}"),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Column(
-                                modifier = Modifier.padding(24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Receipt,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                    modifier = Modifier.size(48.dp)
-                                )
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(
-                                    text = "No Expense Records",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "No expense entries found. Tap the + button to add a real expense or configure Google Sheets sync.",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                )
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = expense.particulars,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        if (expense.vendorPayee.isNotBlank() && expense.vendorPayee != "--") {
+                                            Text(
+                                                text = "Payee: ${expense.vendorPayee}",
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                                modifier = Modifier.padding(top = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(
+                                            text = "₹${expense.amount.toInt()}",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Rose600
+                                        )
+                                        if (expense.dateDay.isNotBlank()) {
+                                            Text(
+                                                text = expense.dateDay,
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        color = Amber100,
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = expense.category.ifBlank { "General" },
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Amber600,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        )
+                                    }
+
+                                    if (expense.remarks.isNotBlank()) {
+                                        Text(
+                                            text = expense.remarks,
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false).padding(start = 8.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
-                    }
-                } else {
-                    items(expenses) { expense ->
-                        ExpenseCard(
-                            expense = expense,
-                            onClick = { selectedExpenseItem = expense }
-                        )
                     }
                 }
             }
         }
     }
 
+    // Detail Dialog for an individual transaction
+    selectedExpenseItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { selectedExpenseItem = null },
+            title = {
+                Text(text = item.particulars, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DetailRow("Amount Spent", "₹${item.amount.toInt()}")
+                    if (item.category.isNotBlank()) DetailRow("Category", item.category)
+                    if (item.vendorPayee.isNotBlank()) DetailRow("Payee / Vendor", item.vendorPayee)
+                    if (item.dateDay.isNotBlank()) DetailRow("Date / Day", item.dateDay)
+                    if (item.month.isNotBlank()) DetailRow("Month", item.month)
+                    if (item.remarks.isNotBlank()) DetailRow("Remarks", item.remarks)
+                    if (item.balance > 0) DetailRow("Ledger Balance", "₹${item.balance.toInt()}")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedExpenseItem = null }) {
+                    Text("Close")
+                }
+            },
+            dismissButton = {
+                if (onDeleteExpense != null) {
+                    TextButton(
+                        onClick = {
+                            onDeleteExpense(item.id)
+                            selectedExpenseItem = null
+                        }
+                    ) {
+                        Text("Delete", color = Rose600)
+                    }
+                }
+            }
+        )
+    }
+
     // Add Expense Dialog
     if (showAddDialog && onAddExpense != null) {
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
-            title = { Text("Add Real Expense", fontWeight = FontWeight.Bold) },
+            title = { Text("Add Expense Entry") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = newParticulars,
                         onValueChange = { newParticulars = it },
-                        label = { Text("Expense Particulars") },
+                        label = { Text("Particulars / Purpose") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -399,14 +370,14 @@ fun ExpenseScreen(
                     OutlinedTextField(
                         value = newCategory,
                         onValueChange = { newCategory = it },
-                        label = { Text("Category (e.g. Cleaning, EB, AMC)") },
+                        label = { Text("Category") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = newDay,
                         onValueChange = { newDay = it },
-                        label = { Text("Date (e.g. 15)") },
+                        label = { Text("Date / Day") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -422,20 +393,15 @@ fun ExpenseScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val amt = newAmount.toDoubleOrNull() ?: 0.0
-                        if (newParticulars.isNotBlank() && amt > 0) {
-                            onAddExpense(newParticulars, amt, newCategory, newVendor, newDay, newRemarks)
-                            newParticulars = ""
-                            newAmount = ""
-                            newVendor = ""
-                            newRemarks = ""
-                            newDay = ""
+                        val parsedAmt = newAmount.toDoubleOrNull() ?: 0.0
+                        if (newParticulars.isNotBlank() && parsedAmt > 0) {
+                            onAddExpense(newParticulars, parsedAmt, newCategory, newVendor, newDay, newRemarks)
                             showAddDialog = false
+                            newParticulars = ""; newAmount = ""; newVendor = ""; newRemarks = ""; newDay = ""
                         }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Slate900)
+                    }
                 ) {
-                    Text("Save Expense")
+                    Text("Save")
                 }
             },
             dismissButton = {
@@ -445,237 +411,15 @@ fun ExpenseScreen(
             }
         )
     }
-
-    // Detail Dialog for Bill & Picture link reference
-    selectedExpenseItem?.let { expense ->
-        val context = LocalContext.current
-        val hasBill = expense.billAvailable.contains("Available", ignoreCase = true) || expense.billAvailable.startsWith("http")
-        val hasPhoto = expense.picture.contains("Available", ignoreCase = true) || expense.picture.startsWith("http")
-
-        AlertDialog(
-            onDismissRequest = { selectedExpenseItem = null },
-            title = {
-                Text(expense.particulars, fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Date: ${expense.dateDay} July ${expense.year}", fontSize = 13.sp)
-                    Text("Category: ${expense.category}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Amount: ₹${expense.amount.toInt()}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Rose600)
-                    Text("Vendor/Payee: ${expense.vendorPayee}", fontSize = 13.sp)
-                    Text("Remarks: ${expense.remarks}", fontSize = 13.sp)
-                    Text("Running Balance: ₹${expense.balance.toInt()}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Teal600)
-
-                    Divider(modifier = Modifier.padding(vertical = 4.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Bill Document:", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        Surface(
-                            color = if (hasBill) Emerald100 else Slate100,
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                text = expense.billAvailable,
-                                fontSize = 12.sp,
-                                color = if (hasBill) Emerald600 else Slate800,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Photo Verification:", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        Surface(
-                            color = if (hasPhoto) Emerald100 else Slate100,
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                text = expense.picture,
-                                fontSize = 12.sp,
-                                color = if (hasPhoto) Emerald600 else Slate800,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-
-                    if (hasBill || hasPhoto) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Button(
-                            onClick = {
-                                val url = if (expense.billAvailable.startsWith("http")) expense.billAvailable 
-                                          else if (expense.picture.startsWith("http")) expense.picture 
-                                          else "https://drive.google.com"
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                try {
-                                    context.startActivity(intent)
-                                } catch (_: Exception) {}
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Slate900),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(Icons.Default.Receipt, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Open Linked Bill / Photo", fontSize = 13.sp)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { selectedExpenseItem = null }) {
-                    Text("Close")
-                }
-            }
-        )
-    }
 }
 
 @Composable
-fun LegendBadge(
-    label: String,
-    amount: String,
-    color: Color
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(color)
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        Text("$label: ", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-        Text(amount, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-fun ExpenseCard(
-    expense: ExpenseRecord,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("expense_card_${expense.id}"),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        onClick = onClick
+private fun DetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        color = Slate900,
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(expense.dateDay, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            Text("JUL", fontSize = 9.sp, color = Amber500, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(10.dp))
-
-                    Column {
-                        Text(
-                            text = expense.particulars,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Vendor: ${expense.vendorPayee}",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    }
-                }
-
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "- ₹${expense.amount.toInt()}",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Rose600
-                    )
-                    Surface(
-                        color = Teal50,
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = "Bal ₹${expense.balance.toInt()}",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Teal600,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = expense.remarks,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(6.dp)
-                ) {
-                    Text(
-                        text = expense.category,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (expense.billAvailable != "N/A") {
-                        AssistChip(
-                            onClick = onClick,
-                            label = { Text("Bill", fontSize = 10.sp) },
-                            leadingIcon = { Icon(Icons.Default.Attachment, contentDescription = null, modifier = Modifier.size(12.dp)) },
-                            modifier = Modifier.height(24.dp)
-                        )
-                    }
-                    if (expense.picture != "N/A") {
-                        AssistChip(
-                            onClick = onClick,
-                            label = { Text("Photo", fontSize = 10.sp) },
-                            leadingIcon = { Icon(Icons.Default.Photo, contentDescription = null, modifier = Modifier.size(12.dp)) },
-                            modifier = Modifier.height(24.dp)
-                        )
-                    }
-                }
-            }
-        }
+        Text(text = label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        Text(text = value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
 }

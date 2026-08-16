@@ -71,11 +71,13 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                if (!uiState.config.isLoggedIn) {
+                if (!uiState.config.isLoggedIn || uiState.config.userEmail.isBlank()) {
                     GoogleLoginScreen(
-                        userEmail = uiState.config.userEmail,
-                        webClientId = uiState.config.webClientId,
-                        onLogin = { email, clientVal -> viewModel.loginWithGoogle(email, clientVal) }
+                        config = uiState.config,
+                        isLoading = uiState.isLoading,
+                        onLoginSuccess = { email ->
+                            viewModel.loginWithGoogle(email)
+                        }
                     )
                 } else {
                     Scaffold(
@@ -129,15 +131,16 @@ class MainActivity : ComponentActivity() {
                                 DashboardScreen(
                                     collectionRecord = uiState.collectionRecord,
                                     expenses = uiState.expenses,
+                                    contributions = uiState.yearlyContributions,
                                     config = uiState.config,
                                     isLoading = uiState.isLoading,
                                     syncMessage = uiState.syncMessage,
                                     onTriggerSync = { viewModel.triggerSync() },
                                     onLogout = {
                                         viewModel.logout(context)
-                                        navController.navigate("login_config") {
-                                            popUpTo("dashboard") { inclusive = true }
-                                        }
+                                    },
+                                    onUpdateSheetUrl = { newUrl ->
+                                        viewModel.updateSheetUrl(newUrl)
                                     },
                                     onNavigateToExpenses = { navController.navigate("expenses") },
                                     onNavigateToYearlyReport = { navController.navigate("yearly_report") },
@@ -169,7 +172,7 @@ class MainActivity : ComponentActivity() {
                                 val categories = if (uiState.yearlyCategories.isNotEmpty()) {
                                     uiState.yearlyCategories
                                 } else {
-                                    uiState.expenses.groupBy { it.category }
+                                    uiState.expenses.groupBy { it.category.ifBlank { "General" } }
                                         .map { (cat, list) -> YearlyExpenseCategory(category = cat, amount2026 = list.sumOf { it.amount }) }
                                 }
                                 val majorWorks = if (uiState.majorWorks.isNotEmpty()) {
@@ -203,7 +206,12 @@ class MainActivity : ComponentActivity() {
                                     config = uiState.config,
                                     isLoading = uiState.isLoading,
                                     syncMessage = uiState.syncMessage,
-                                    onLogin = { email, clientVal -> viewModel.loginWithGoogle(email, clientVal) },
+                                    onLogout = {
+                                        viewModel.logout(context)
+                                    },
+                                    onUpdateSheetUrl = { url ->
+                                        viewModel.updateSheetUrl(url)
+                                    },
                                     onSaveGcpConfig = { spreadsheetId, apiKey, gcpProject, serviceAccount, userEmail, webClientId ->
                                         viewModel.updateGcpConfig(spreadsheetId, apiKey, gcpProject, serviceAccount, userEmail, webClientId)
                                     },
