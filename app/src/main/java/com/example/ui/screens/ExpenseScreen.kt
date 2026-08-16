@@ -1,24 +1,21 @@
 package com.example.ui.screens
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,8 +35,6 @@ fun ExpenseScreen(
     onCategorySelected: (String) -> Unit,
     onMonthSelected: (String) -> Unit = {},
     allExpensesForMonths: List<ExpenseRecord> = expenses,
-    onAddExpense: ((particulars: String, amount: Double, category: String, vendor: String, day: String, remarks: String) -> Unit)? = null,
-    onDeleteExpense: ((Int) -> Unit)? = null,
     onNavigateBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -55,28 +50,8 @@ fun ExpenseScreen(
 
     val totalExpenseSum = expenses.sumOf { it.amount }
     var selectedExpenseItem by remember { mutableStateOf<ExpenseRecord?>(null) }
-    var showAddDialog by remember { mutableStateOf(false) }
-
-    var newParticulars by remember { mutableStateOf("") }
-    var newAmount by remember { mutableStateOf("") }
-    var newVendor by remember { mutableStateOf("") }
-    var newCategory by remember { mutableStateOf("Maintenance") }
-    var newRemarks by remember { mutableStateOf("") }
-    var newDay by remember { mutableStateOf("") }
 
     Scaffold(
-        floatingActionButton = {
-            if (onAddExpense != null) {
-                FloatingActionButton(
-                    onClick = { showAddDialog = true },
-                    containerColor = Slate900,
-                    contentColor = Color.White,
-                    modifier = Modifier.testTag("add_expense_fab")
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Expense")
-                }
-            }
-        },
         topBar = {
             TopAppBar(
                 title = {
@@ -92,7 +67,7 @@ fun ExpenseScreen(
                 navigationIcon = {
                     if (onNavigateBack != null) {
                         IconButton(onClick = onNavigateBack) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
                 },
@@ -301,7 +276,7 @@ fun ExpenseScreen(
         }
     }
 
-    // Detail Dialog for an individual transaction
+    // Detail Dialog for an individual transaction (View-Only)
     selectedExpenseItem?.let { item ->
         AlertDialog(
             onDismissRequest = { selectedExpenseItem = null },
@@ -322,91 +297,6 @@ fun ExpenseScreen(
             confirmButton = {
                 TextButton(onClick = { selectedExpenseItem = null }) {
                     Text("Close")
-                }
-            },
-            dismissButton = {
-                if (onDeleteExpense != null) {
-                    TextButton(
-                        onClick = {
-                            onDeleteExpense(item.id)
-                            selectedExpenseItem = null
-                        }
-                    ) {
-                        Text("Delete", color = Rose600)
-                    }
-                }
-            }
-        )
-    }
-
-    // Add Expense Dialog
-    if (showAddDialog && onAddExpense != null) {
-        AlertDialog(
-            onDismissRequest = { showAddDialog = false },
-            title = { Text("Add Expense Entry") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = newParticulars,
-                        onValueChange = { newParticulars = it },
-                        label = { Text("Particulars / Purpose") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newAmount,
-                        onValueChange = { newAmount = it },
-                        label = { Text("Amount (₹)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newVendor,
-                        onValueChange = { newVendor = it },
-                        label = { Text("Vendor / Payee") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newCategory,
-                        onValueChange = { newCategory = it },
-                        label = { Text("Category") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newDay,
-                        onValueChange = { newDay = it },
-                        label = { Text("Date / Day") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newRemarks,
-                        onValueChange = { newRemarks = it },
-                        label = { Text("Remarks (Optional)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val parsedAmt = newAmount.toDoubleOrNull() ?: 0.0
-                        if (newParticulars.isNotBlank() && parsedAmt > 0) {
-                            onAddExpense(newParticulars, parsedAmt, newCategory, newVendor, newDay, newRemarks)
-                            showAddDialog = false
-                            newParticulars = ""; newAmount = ""; newVendor = ""; newRemarks = ""; newDay = ""
-                        }
-                    }
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddDialog = false }) {
-                    Text("Cancel")
                 }
             }
         )

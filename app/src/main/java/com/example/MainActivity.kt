@@ -154,15 +154,6 @@ class MainActivity : ComponentActivity() {
                                 CollectionsScreen(
                                     collectionRecords = uiState.collectionRecords,
                                     ownerContacts = uiState.ownerContacts,
-                                    onAddCollection = { yr, mo, total, part, rem ->
-                                        viewModel.addCollectionTotal(yr, mo, total, part, rem)
-                                    },
-                                    onUpdateCollection = { record ->
-                                        viewModel.updateCollectionRecord(record)
-                                    },
-                                    onDeleteCollection = { id ->
-                                        viewModel.deleteCollectionRecord(id)
-                                    },
                                     onNavigateBack = null
                                 )
                             }
@@ -177,10 +168,6 @@ class MainActivity : ComponentActivity() {
                                     onSearchQueryChanged = { viewModel.onSearchQueryChanged(it) },
                                     onCategorySelected = { viewModel.onCategoryFilterSelected(it) },
                                     onMonthSelected = { viewModel.onMonthFilterSelected(it) },
-                                    onAddExpense = { particulars, amount, category, vendor, day, remarks ->
-                                        viewModel.addExpense(particulars, amount, category, vendor, day, remarks = remarks)
-                                    },
-                                    onDeleteExpense = { id -> viewModel.deleteExpense(id) },
                                     onNavigateBack = null
                                 )
                             }
