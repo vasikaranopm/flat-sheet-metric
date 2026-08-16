@@ -69,425 +69,707 @@ class MaintenanceRepository(private val database: AppDatabase) {
         val sheetId = extractSpreadsheetId(rawInput)
         val explicitGid = extractGid(rawInput)
 
-        if (sheetId.isEmpty()) {
-            return@withContext Result.failure(Exception("No Google Sheet ID or URL configured. Please enter your Google Sheet link."))
+        if (sheetId.isEmpty() || sheetId == "DEFAULT_SHEET_LINK_PLACEHOLDER") {
+            return@withContext Result.failure(Exception("No Google Sheet configured. Please enter your Google Sheet link in Settings or Dashboard."))
         }
 
-        // 1. Try Google Sheets API if API key exists
-        if (config.apiKey.isNotEmpty()) {
-            try {
-                val retrofit = Retrofit.Builder()
-                    .baseUrl("https://sheets.googleapis.com/")
-                    .addConverterFactory(MoshiConverterFactory.create())
-                    .build()
+        val client = OkHttpClient.Builder()
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .connectTimeout(12, TimeUnit.SECONDS)
+            .readTimeout(12, TimeUnit.SECONDS)
+            .build()
 
-                val api = retrofit.create(GoogleSheetsApiService::class.java)
-                val response = api.getSheetValues(
-                    spreadsheetId = sheetId,
-                    range = "Expenses!A2:K100",
-                    apiKey = config.apiKey
-                )
-
-                if (response.isSuccessful && response.body()?.values != null) {
-                    val rows = response.body()!!.values!!
-                    val newExpenses = rows.mapIndexedNotNull { index, row ->
-                        if (row.size >= 4) {
-                            ExpenseRecord(
-                                id = index + 1,
-                                year = row.getOrNull(0) ?: "2026",
-                                month = row.getOrNull(1) ?: "",
-                                dateDay = row.getOrNull(2) ?: "",
-                                particulars = row.getOrNull(3) ?: "",
-                                remarks = row.getOrNull(4) ?: "",
-                                amount = row.getOrNull(5)?.toDoubleOrNull() ?: 0.0,
-                                vendorPayee = row.getOrNull(6) ?: "",
-                                billAvailable = row.getOrNull(7) ?: "N/A",
-                                picture = row.getOrNull(8) ?: "N/A",
-                                balance = row.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
-                                category = row.getOrNull(10) ?: "General"
-                            )
-                        } else null
-                    }
-                    if (newExpenses.isNotEmpty()) {
-                        database.expenseDao().clearAll()
-                        database.expenseDao().insertExpenseRecords(newExpenses)
-                        database.configDao().saveConfig(
-                            config.copy(lastSyncTime = System.currentTimeMillis())
-                        )
-                        return@withContext Result.success("Access Verified! Synced ${newExpenses.size} expense records via Google Sheets API.")
-                    }
+        fun fetchCsvForTab(tabNames: List<String>): Pair<String?, String?> {
+            var lastError: String? = null
+            for (tab in tabNames) {
+                val url = if (tab.isEmpty()) {
+                    if (explicitGid != null) "https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&gid=$explicitGid"
+                    else "https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv"
+                } else {
+                    "https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=${java.net.URLEncoder.encode(tab, "UTF-8")}"
                 }
-            } catch (e: Exception) {
-                // proceed to public CSV export check
-            }
-        }
 
-        // 2. Try Public Google Sheet CSV Export with detailed diagnostics
-        try {
-            val urlsToTry = mutableListOf<String>()
-            if (explicitGid != null) {
-                urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&gid=$explicitGid")
-            }
-            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv")
-            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=Expenses")
-            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=Expense")
-            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=July")
-            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=August")
-            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=Maintenance")
-            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=Sheet1")
-            urlsToTry.add("https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv&sheet=Data")
-
-            val client = OkHttpClient.Builder()
-                .followRedirects(true)
-                .followSslRedirects(true)
-                .connectTimeout(12, TimeUnit.SECONDS)
-                .readTimeout(12, TimeUnit.SECONDS)
-                .build()
-
-            var allExpenses = mutableListOf<ExpenseRecord>()
-            var extractedTitle = config.spreadsheetTitle
-            var successfulFetch = false
-            var diagnosedReason: String? = null
-
-            for (targetUrl in urlsToTry.distinct()) {
                 try {
                     val request = Request.Builder()
-                        .url(targetUrl)
+                        .url(url)
                         .header("User-Agent", "Mozilla/5.0 (Android; Mobile)")
                         .build()
                     val response = client.newCall(request).execute()
-                    val statusCode = response.code
+                    val code = response.code
                     val body = response.body?.string() ?: ""
 
-                    if (statusCode == 200) {
+                    if (code == 200) {
                         if (body.contains("accounts.google.com") || body.contains("ServiceLogin") || body.contains("<!DOCTYPE html>") || body.contains("<html>")) {
-                            diagnosedReason = "Access Restricted: Google Sheet requires sign-in. To allow the app to read it, open your Google Sheet -> Click 'Share' (top right) -> Under 'General access', change from 'Restricted' to 'Anyone with the link' (Viewer role)."
+                            lastError = "Access Restricted: Google Sheet is private or requires sign-in. To allow the app to read it, open your Google Sheet -> Click 'Share' (top right) -> Under 'General access', change from 'Restricted' to 'Anyone with the link' (Viewer role)."
                             continue
                         }
-                        successfulFetch = true
-                        val parsed = parseCsvExpenses(body)
-                        if (parsed.isNotEmpty()) {
-                            allExpenses.addAll(parsed)
-                            val firstLine = body.lines().firstOrNull() ?: ""
-                            val cellA1 = parseCsvLine(firstLine).firstOrNull()?.trim('"')?.trim() ?: ""
-                            if (cellA1.isNotBlank() && cellA1.length in 3..50 && !cellA1.contains("date", ignoreCase = true) && !cellA1.contains("particular", ignoreCase = true)) {
-                                extractedTitle = cellA1
-                            }
-                            if (targetUrl.contains("gid=") || targetUrl.contains("sheet=Expenses")) {
-                                break
-                            }
+                        if (body.isNotBlank() && !body.startsWith("{\"status\":\"error\"")) {
+                            return body to null
                         }
-                    } else if (statusCode == 404) {
-                        diagnosedReason = "Spreadsheet Not Found (HTTP 404): The Google Sheet ID '$sheetId' does not exist or URL is invalid. Please check the URL."
-                    } else if (statusCode == 403) {
-                        diagnosedReason = "Access Denied (HTTP 403): Permissions are restricted. In Google Sheets, tap Share -> General Access -> 'Anyone with the link can view'."
-                    } else if (statusCode == 401) {
-                        diagnosedReason = "Unauthorized (HTTP 401): Google Sheet is private and requires viewer access for link sharing."
+                    } else if (code == 404) {
+                        lastError = "Spreadsheet Not Found (HTTP 404): The Google Sheet ID '$sheetId' was not found. Please verify the URL."
+                    } else if (code == 403) {
+                        lastError = "Access Denied (HTTP 403): Permissions are restricted. In Google Sheets, tap Share -> General Access -> 'Anyone with the link can view'."
+                    } else if (code == 401) {
+                        lastError = "Unauthorized (HTTP 401): Google Sheet requires viewer permissions for link sharing."
                     }
                 } catch (e: Exception) {
-                    if (diagnosedReason == null) {
-                        diagnosedReason = "Network Connection Issue: ${e.localizedMessage ?: "Could not connect to Google Sheets servers"}"
+                    lastError = "Network Connection Issue: ${e.localizedMessage ?: "Could not connect to Google Sheets"}"
+                }
+            }
+            return null to lastError
+        }
+
+        try {
+            // 1. Fetch Tab: Collection Record
+            val (collectionCsv, colErr) = fetchCsvForTab(listOf("Collection Record", "Collection", "Collections", "Maintenance Collection Record"))
+            
+            // 2. Fetch Tab: Expense Record
+            val (expenseCsv, expErr) = fetchCsvForTab(listOf("Expense Record", "Expenses", "Expense", "Common Expense Record", "July", "August"))
+            
+            // 3. Fetch Tab: Contacts
+            val (contactsCsv, _) = fetchCsvForTab(listOf("Contacts", "Contact", "Resident Contacts", "Owners Contacts"))
+            
+            // 4. Fetch Tab: Yearly Report
+            val (yearlyCsv, _) = fetchCsvForTab(listOf("Yearly Report", "Yearly", "Report", "Summary", "Annual Report"))
+
+            // Fallback: If specific tabs failed, try root sheet
+            val (rootCsv, rootErr) = if (collectionCsv == null && expenseCsv == null) {
+                fetchCsvForTab(listOf(""))
+            } else null to null
+
+            if (collectionCsv == null && expenseCsv == null && rootCsv == null) {
+                val failureMsg = colErr ?: expErr ?: rootErr ?: "Unable to fetch data from Google Sheet. Ensure your Google Sheet is shared with 'Anyone with the link can view'."
+                return@withContext Result.failure(Exception(failureMsg))
+            }
+
+            var extractedTitle = config.spreadsheetTitle
+
+            // Parse Collection Records
+            val parsedCollections = mutableListOf<CollectionRecord>()
+            val parsedYearlyContribFromCollection = mutableListOf<YearlyContribution>()
+            val parsedOwnersFromCollection = mutableListOf<OwnerContact>()
+
+            if (collectionCsv != null) {
+                val (collections, contribs, owners, title) = parseCollectionSheet(collectionCsv)
+                parsedCollections.addAll(collections)
+                parsedYearlyContribFromCollection.addAll(contribs)
+                parsedOwnersFromCollection.addAll(owners)
+                if (title.isNotBlank()) extractedTitle = title
+            }
+
+            // Parse Expense Records
+            val parsedExpenses = mutableListOf<ExpenseRecord>()
+            if (expenseCsv != null) {
+                val (expenses, title) = parseExpenseSheet(expenseCsv)
+                parsedExpenses.addAll(expenses)
+                if (title.isNotBlank() && extractedTitle.isBlank()) extractedTitle = title
+            } else if (rootCsv != null) {
+                val (expenses, title) = parseExpenseSheet(rootCsv)
+                parsedExpenses.addAll(expenses)
+                if (title.isNotBlank()) extractedTitle = title
+            }
+
+            // Parse Contacts
+            val parsedOwners = mutableListOf<OwnerContact>()
+            val parsedServices = mutableListOf<ServiceContact>()
+            if (contactsCsv != null) {
+                val (owners, services) = parseContactsSheet(contactsCsv)
+                parsedOwners.addAll(owners)
+                parsedServices.addAll(services)
+            }
+            // Merge owners from collection headers if contacts tab had fewer
+            if (parsedOwners.isEmpty() && parsedOwnersFromCollection.isNotEmpty()) {
+                parsedOwners.addAll(parsedOwnersFromCollection)
+            } else if (parsedOwnersFromCollection.isNotEmpty()) {
+                for (owner in parsedOwnersFromCollection) {
+                    val existingIndex = parsedOwners.indexOfFirst { it.flatNo.equals(owner.flatNo, ignoreCase = true) }
+                    if (existingIndex >= 0) {
+                        val curr = parsedOwners[existingIndex]
+                        if (curr.residentName.isBlank() && owner.residentName.isNotBlank()) {
+                            parsedOwners[existingIndex] = curr.copy(residentName = owner.residentName)
+                        }
+                    } else {
+                        parsedOwners.add(owner)
                     }
                 }
             }
 
-            if (allExpenses.isNotEmpty()) {
-                val distinctExpenses = allExpenses.distinctBy { "${it.month}_${it.dateDay}_${it.particulars}_${it.amount}_${it.vendorPayee}" }
-                    .mapIndexed { index, record -> record.copy(id = index + 1) }
+            // Parse Yearly Report
+            val parsedYearlyCategories = mutableListOf<YearlyExpenseCategory>()
+            val parsedMajorWorks = mutableListOf<MajorWork>()
+            val parsedYearlyContribFromReport = mutableListOf<YearlyContribution>()
 
-                database.expenseDao().clearAll()
-                database.expenseDao().insertExpenseRecords(distinctExpenses)
+            if (yearlyCsv != null) {
+                val (contribs, cats, works) = parseYearlyReportSheet(yearlyCsv)
+                parsedYearlyContribFromReport.addAll(contribs)
+                parsedYearlyCategories.addAll(cats)
+                parsedMajorWorks.addAll(works)
+            }
 
-                // 1. Dynamic Yearly Categories
-                val categoriesMap = distinctExpenses.groupBy { it.category.ifBlank { "General" } }
-                val categoryRecords = categoriesMap.map { (catName, list) ->
-                    YearlyExpenseCategory(
-                        category = catName,
-                        amount2026 = list.sumOf { it.amount }
-                    )
-                }
-                database.yearlyReportDao().clearCategories()
-                database.yearlyReportDao().insertExpenseCategories(categoryRecords)
+            // If yearly categories empty, compute directly from parsed expenses
+            if (parsedYearlyCategories.isEmpty() && parsedExpenses.isNotEmpty()) {
+                val grouped = parsedExpenses.groupBy { it.category.ifBlank { "General" } }
+                parsedYearlyCategories.addAll(grouped.map { (cat, list) ->
+                    YearlyExpenseCategory(category = cat, amount2026 = list.sumOf { it.amount })
+                })
+            }
 
-                // 2. Dynamic Major Capital Works
-                val majorKeywords = listOf("sensor", "motor", "alteration", "repair", "paint", "replace", "plumbing", "electrical", "tank", "clean", "work", "purchase", "installation", "service", "capital", "upgrade")
-                val majorWorkRecords = distinctExpenses.filter { exp ->
-                    exp.amount >= 1000 || majorKeywords.any { exp.particulars.contains(it, ignoreCase = true) || exp.category.contains(it, ignoreCase = true) }
+            // If major works empty, detect high-value or alteration expenses
+            if (parsedMajorWorks.isEmpty() && parsedExpenses.isNotEmpty()) {
+                val majorKeywords = listOf("sensor", "motor", "alteration", "installation", "cable", "repair", "amc", "service")
+                val foundWorks = parsedExpenses.filter { exp ->
+                    exp.amount >= 1000 || majorKeywords.any { exp.particulars.contains(it, ignoreCase = true) }
                 }.map { exp ->
-                    MajorWork(
-                        description = exp.particulars,
-                        amount2026 = exp.amount
-                    )
+                    MajorWork(description = exp.particulars, amount2026 = exp.amount)
                 }
-                database.yearlyReportDao().clearMajorWorks()
-                if (majorWorkRecords.isNotEmpty()) {
-                    database.yearlyReportDao().insertMajorWorks(majorWorkRecords)
-                }
-
-                // 3. Dynamic Flat Collections & Yearly Contributions
-                val flatContributionsMap = mutableMapOf<String, Pair<String, Double>>()
-                val flatRegex = Regex("""(?i)\b(?:flat|unit|door|apt|villa|no\.?|#)?\s*([0-9]{1,4}[a-zA-Z]?|[a-zA-Z][0-9]{1,3})\b""")
-
-                for (exp in distinctExpenses) {
-                    val combined = "${exp.particulars} ${exp.vendorPayee} ${exp.remarks}"
-                    val match = flatRegex.find(combined)
-                    if (match != null) {
-                        val flatKey = match.groupValues[1].uppercase()
-                        val current = flatContributionsMap[flatKey]
-                        val residentName = if (exp.vendorPayee.isNotBlank() && exp.vendorPayee != "--" && exp.vendorPayee != "General Vendor") exp.vendorPayee else "Flat $flatKey Resident"
-                        val addedAmt = (current?.second ?: 0.0) + exp.amount
-                        flatContributionsMap[flatKey] = residentName to addedAmt
-                    }
-                }
-
-                val flatContributions = flatContributionsMap.map { (flatNo, pair) ->
-                    YearlyContribution(
-                        flatNo = flatNo,
-                        residentName = pair.first,
-                        amount2026 = pair.second
-                    )
-                }
-
-                database.yearlyReportDao().clearContributions()
-                if (flatContributions.isNotEmpty()) {
-                    database.yearlyReportDao().insertContributions(flatContributions)
-                }
-
-                val totalCollectedVal = flatContributions.sumOf { it.amount2026 }
-                database.collectionDao().insertCollectionRecord(
-                    CollectionRecord(
-                        id = 1,
-                        year = distinctExpenses.firstOrNull()?.year ?: "",
-                        month = distinctExpenses.firstOrNull()?.month ?: "",
-                        particulars = "Maintenance Fund & Collections",
-                        remarks = if (flatContributions.isNotEmpty()) "${flatContributions.size} Flats Recorded" else "Direct Live Sync",
-                        totalAmount = totalCollectedVal
-                    )
-                )
-
-                // 4. Dynamic Contacts (Vendors & Payees from live sheet)
-                val extractedServices = distinctExpenses
-                    .filter { it.vendorPayee.isNotBlank() && it.vendorPayee != "--" && it.vendorPayee != "N/A" && it.vendorPayee != "General Vendor" }
-                    .distinctBy { it.vendorPayee.lowercase() }
-                    .map { exp ->
-                        ServiceContact(
-                            serviceType = exp.category.ifBlank { "Maintenance Service" },
-                            contactPerson = exp.vendorPayee,
-                            phoneNo = "",
-                            remarks = "Vendor/Payee for ${exp.particulars}"
-                        )
-                    }
-
-                database.contactsDao().clearServices()
-                if (extractedServices.isNotEmpty()) {
-                    database.contactsDao().insertServiceContacts(extractedServices)
-                }
-
-                val extractedOwners = flatContributions.map { c ->
-                    OwnerContact(
-                        flatNo = c.flatNo,
-                        residentName = c.residentName.ifBlank { "Flat ${c.flatNo}" },
-                        primaryContactNo = "",
-                        emergencyContactNo = ""
-                    )
-                }
-                database.contactsDao().clearOwners()
-                if (extractedOwners.isNotEmpty()) {
-                    database.contactsDao().insertOwnerContacts(extractedOwners)
-                }
-
-                val finalTitle = if (extractedTitle.isNotBlank() && extractedTitle.length in 3..60) extractedTitle else config.spreadsheetTitle.ifBlank { "Apartment Maintenance Ledger" }
-                database.configDao().saveConfig(
-                    config.copy(
-                        spreadsheetTitle = finalTitle,
-                        lastSyncTime = System.currentTimeMillis()
-                    )
-                )
-                return@withContext Result.success("Success: Synced ${distinctExpenses.size} live expenses & ${flatContributions.size} flat collections from Google Sheet!")
-            } else if (successfulFetch) {
-                return@withContext Result.failure(Exception("Sheet connected, but 0 expense records found. Please check that your Google Sheet has header columns (e.g., Date, Description/Particulars, Amount)."))
-            } else {
-                val failureMessage = diagnosedReason ?: "Unable to fetch data from Google Sheet. Please check the sheet link and verify it is shared with 'Anyone with the link can view'."
-                return@withContext Result.failure(Exception(failureMessage))
+                parsedMajorWorks.addAll(foundWorks)
             }
+
+            // Final Contributions: prioritize report, then collection calculation
+            val finalContributions = if (parsedYearlyContribFromReport.isNotEmpty()) {
+                parsedYearlyContribFromReport
+            } else if (parsedYearlyContribFromCollection.isNotEmpty()) {
+                parsedYearlyContribFromCollection
+            } else emptyList()
+
+            // Save all to database
+            database.expenseDao().clearAll()
+            if (parsedExpenses.isNotEmpty()) {
+                database.expenseDao().insertExpenseRecords(parsedExpenses)
+            }
+
+            database.collectionDao().clearAll()
+            if (parsedCollections.isNotEmpty()) {
+                for (col in parsedCollections) {
+                    database.collectionDao().insertCollectionRecord(col)
+                }
+            }
+
+            database.yearlyReportDao().clearContributions()
+            if (finalContributions.isNotEmpty()) {
+                database.yearlyReportDao().insertContributions(finalContributions)
+            }
+
+            database.yearlyReportDao().clearCategories()
+            if (parsedYearlyCategories.isNotEmpty()) {
+                database.yearlyReportDao().insertExpenseCategories(parsedYearlyCategories)
+            }
+
+            database.yearlyReportDao().clearMajorWorks()
+            if (parsedMajorWorks.isNotEmpty()) {
+                database.yearlyReportDao().insertMajorWorks(parsedMajorWorks)
+            }
+
+            database.contactsDao().clearOwners()
+            if (parsedOwners.isNotEmpty()) {
+                database.contactsDao().insertOwnerContacts(parsedOwners)
+            }
+
+            database.contactsDao().clearServices()
+            if (parsedServices.isNotEmpty()) {
+                database.contactsDao().insertServiceContacts(parsedServices)
+            }
+
+            val finalTitle = if (extractedTitle.isNotBlank() && extractedTitle.length in 3..60) extractedTitle else "Gomathi Ilam Thendral"
+            database.configDao().saveConfig(
+                config.copy(
+                    spreadsheetTitle = finalTitle,
+                    lastSyncTime = System.currentTimeMillis()
+                )
+            )
+
+            val summaryStats = mutableListOf<String>()
+            if (parsedCollections.isNotEmpty()) summaryStats.add("${parsedCollections.size} collection months")
+            if (parsedExpenses.isNotEmpty()) summaryStats.add("${parsedExpenses.size} expense entries")
+            if (parsedOwners.isNotEmpty()) summaryStats.add("${parsedOwners.size} resident contacts")
+
+            val successDetails = if (summaryStats.isNotEmpty()) summaryStats.joinToString(", ") else "0 records found"
+            return@withContext Result.success("Success: Synced $successDetails from Google Sheet!")
         } catch (e: Exception) {
             return@withContext Result.failure(Exception("Sync Error: ${e.localizedMessage ?: "Unknown error while reading Google Sheet"}"))
         }
     }
 
-    private fun parseMonthAndYearFromDate(dateRaw: String, monthRaw: String, yearRaw: String): Pair<String, String> {
-        val monthFromCol = monthRaw.trim()
-        val yearFromCol = yearRaw.trim()
+    private data class CollectionParseResult(
+        val collections: List<CollectionRecord>,
+        val contributions: List<YearlyContribution>,
+        val owners: List<OwnerContact>,
+        val title: String
+    )
 
-        val combined = "$dateRaw $monthRaw $yearRaw".lowercase()
-        var parsedMonth = if (monthFromCol.isNotBlank()) monthFromCol else ""
-        var parsedYear = if (yearFromCol.isNotBlank()) yearFromCol else "2026"
-
-        if (parsedMonth.isBlank()) {
-            if (combined.contains("jan")) parsedMonth = "January"
-            else if (combined.contains("feb")) parsedMonth = "February"
-            else if (combined.contains("mar")) parsedMonth = "March"
-            else if (combined.contains("apr")) parsedMonth = "April"
-            else if (combined.contains("may")) parsedMonth = "May"
-            else if (combined.contains("jun")) parsedMonth = "June"
-            else if (combined.contains("jul")) parsedMonth = "July"
-            else if (combined.contains("aug")) parsedMonth = "August"
-            else if (combined.contains("sep")) parsedMonth = "September"
-            else if (combined.contains("oct")) parsedMonth = "October"
-            else if (combined.contains("nov")) parsedMonth = "November"
-            else if (combined.contains("dec")) parsedMonth = "December"
-            else {
-                val parts = dateRaw.split("/", "-", ".", " ")
-                if (parts.size >= 2) {
-                    val nums = parts.mapNotNull { it.toIntOrNull() }
-                    if (nums.size >= 2) {
-                        val mNum = nums.firstOrNull { it in 1..12 }
-                        if (mNum != null) {
-                            val mArray = arrayOf("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
-                            parsedMonth = mArray[mNum - 1]
-                        }
-                        val yNum = nums.firstOrNull { it in 2020..2030 || it in 24..30 }
-                        if (yNum != null) {
-                            parsedYear = if (yNum < 100) "20$yNum" else "$yNum"
-                        }
-                    }
-                }
-            }
-        }
-        if (parsedMonth.isBlank()) parsedMonth = "July"
-        return parsedMonth to parsedYear
-    }
-
-    private fun parseCsvExpenses(csv: String): List<ExpenseRecord> {
+    private fun parseCollectionSheet(csv: String): CollectionParseResult {
         val lines = csv.lines().filter { it.isNotBlank() }
-        if (lines.isEmpty()) return emptyList()
+        if (lines.isEmpty()) return CollectionParseResult(emptyList(), emptyList(), emptyList(), "")
 
-        val firstLine = lines.first()
-        val lowerFirstLine = firstLine.lowercase()
-        val headerKeywordCount0 = listOf("particular", "amount", "date", "description", "cost", "item", "year", "month", "vendor", "payee", "balance", "s.no", "sl.no", "sl", "rs", "debit", "credit").count { lowerFirstLine.contains(it) }
+        var title = ""
+        var headerIndex = -1
 
-        val hasTitleRow = headerKeywordCount0 < 2 && lines.size > 1
-        val headerLine = if (hasTitleRow) lines[1] else lines[0]
-        val dataLines = if (hasTitleRow) lines.drop(2) else lines.drop(1)
-
-        val headerCols = parseCsvLine(headerLine).map { it.lowercase().trim('"').trim() }
-
-        var yearCol = headerCols.indexOfFirst { it.contains("year") || it.contains("yr") }
-        var monthCol = headerCols.indexOfFirst { it.contains("month") || it.contains("mth") }
-        var dateCol = headerCols.indexOfFirst { it.contains("date") || it.contains("day") || it.contains("dt") || it.contains("s.no") || it.contains("sl.no") || it.contains("sl") || it.contains("no") }
-        var particularsCol = headerCols.indexOfFirst {
-            it.contains("particular") || it.contains("description") || it.contains("item") ||
-                    it.contains("detail") || it.contains("purpose") || it.contains("name") || it.contains("title") ||
-                    it.contains("expense") || it.contains("work") || it.contains("head")
-        }
-        var remarksCol = headerCols.indexOfFirst { it.contains("remark") || it.contains("note") || it.contains("comment") }
-        var amountCol = headerCols.indexOfFirst {
-            it.contains("amount") || it.contains("cost") || it.contains("price") ||
-                    it.contains("rs") || it.contains("inr") || it.contains("₹") || it.contains("spent") || it.contains("total") || it.contains("debit") || it.contains("expenditure")
-        }
-        var vendorCol = headerCols.indexOfFirst {
-            it.contains("vendor") || it.contains("payee") || it.contains("paid") || it.contains("by") || it.contains("person")
-        }
-        var billCol = headerCols.indexOfFirst { it.contains("bill") || it.contains("doc") || it.contains("receipt") }
-        var pictureCol = headerCols.indexOfFirst { it.contains("picture") || it.contains("photo") || it.contains("image") }
-        var balanceCol = headerCols.indexOfFirst { it.contains("balance") || it.contains("bal") }
-        var categoryCol = headerCols.indexOfFirst { it.contains("category") || it.contains("type") || it.contains("head") }
-
-        val sampleRows = dataLines.take(15).map { parseCsvLine(it) }
-
-        if (amountCol == -1 && sampleRows.isNotEmpty()) {
-            val maxCols = sampleRows.maxOfOrNull { it.size } ?: 0
-            for (colIdx in 0 until maxCols) {
-                val numericCount = sampleRows.count { row ->
-                    val cell = row.getOrNull(colIdx)?.trim('"')?.trim()?.replace("₹", "")?.replace(",", "") ?: ""
-                    val num = cell.toDoubleOrNull()
-                    num != null && num > 0
-                }
-                if (numericCount >= (sampleRows.size * 0.4)) {
-                    amountCol = colIdx
-                    break
+        for (i in 0 until minOf(lines.size, 5)) {
+            val cols = parseCsvLine(lines[i]).map { it.lowercase().trim('"').trim() }
+            if (cols.any { it.contains("year") || it.contains("month") || it.contains("particular") || it.contains("1a") }) {
+                headerIndex = i
+                break
+            } else if (i == 0 && lines[0].isNotBlank()) {
+                val firstCell = parseCsvLine(lines[0]).firstOrNull()?.trim('"')?.trim() ?: ""
+                if (firstCell.isNotBlank() && firstCell.length in 3..60) {
+                    title = firstCell.split("-").first().trim()
                 }
             }
         }
 
-        if (particularsCol == -1 && sampleRows.isNotEmpty()) {
-            val maxCols = sampleRows.maxOfOrNull { it.size } ?: 0
-            for (colIdx in 0 until maxCols) {
-                if (colIdx != amountCol && colIdx != dateCol && colIdx != monthCol && colIdx != yearCol) {
-                    particularsCol = colIdx
-                    break
-                }
-            }
+        if (headerIndex == -1) headerIndex = 0
+
+        val headerCols = parseCsvLine(lines[headerIndex]).map { it.trim('"').trim() }
+        val dataLines = lines.drop(headerIndex + 1)
+
+        val yearCol = headerCols.indexOfFirst { it.contains("year", ignoreCase = true) }
+        val monthCol = headerCols.indexOfFirst { it.contains("month", ignoreCase = true) }
+        val particularsCol = headerCols.indexOfFirst { it.contains("particular", ignoreCase = true) }
+        val remarksCol = headerCols.indexOfFirst { it.contains("remark", ignoreCase = true) }
+
+        // Detect Flat columns (1A, 1B, 2A, 2B, 3A, 3B) and their resident names from header e.g. "1A - M.Madhan Raj"
+        fun findFlatCol(flat: String): Pair<Int, String> {
+            val idx = headerCols.indexOfFirst { it.contains(flat, ignoreCase = true) }
+            if (idx == -1) return -1 to ""
+            val fullHeader = headerCols[idx]
+            val residentName = if (fullHeader.contains("-")) {
+                fullHeader.substringAfter("-").trim()
+            } else ""
+            return idx to residentName
         }
 
-        if (particularsCol == -1) particularsCol = if (headerCols.size > 1) 1 else 0
-        if (amountCol == -1) amountCol = (headerCols.size - 1).coerceAtLeast(0)
+        val (col1A, name1A) = findFlatCol("1A")
+        val (col1B, name1B) = findFlatCol("1B")
+        val (col2A, name2A) = findFlatCol("2A")
+        val (col2B, name2B) = findFlatCol("2B")
+        val (col3A, name3A) = findFlatCol("3A")
+        val (col3B, name3B) = findFlatCol("3B")
 
-        var runningBalance = 12000.0
+        val ownerContacts = mutableListOf<OwnerContact>()
+        if (col1A != -1 && name1A.isNotBlank()) ownerContacts.add(OwnerContact("1A", name1A))
+        if (col1B != -1 && name1B.isNotBlank()) ownerContacts.add(OwnerContact("1B", name1B))
+        if (col2A != -1 && name2A.isNotBlank()) ownerContacts.add(OwnerContact("2A", name2A))
+        if (col2B != -1 && name2B.isNotBlank()) ownerContacts.add(OwnerContact("2B", name2B))
+        if (col3A != -1 && name3A.isNotBlank()) ownerContacts.add(OwnerContact("3A", name3A))
+        if (col3B != -1 && name3B.isNotBlank()) ownerContacts.add(OwnerContact("3B", name3B))
 
-        return dataLines.mapIndexedNotNull { index, line ->
+        val collections = mutableListOf<CollectionRecord>()
+        val flatTotals = mutableMapOf<String, Double>("1A" to 0.0, "1B" to 0.0, "2A" to 0.0, "2B" to 0.0, "3A" to 0.0, "3B" to 0.0)
+
+        var currentYear = "2026"
+
+        for (line in dataLines) {
             val cols = parseCsvLine(line)
-            if (cols.isEmpty() || cols.all { it.isBlank() }) return@mapIndexedNotNull null
+            if (cols.isEmpty() || cols.all { it.isBlank() }) continue
 
-            fun getVal(colIdx: Int): String {
-                if (colIdx == -1) return ""
-                return cols.getOrNull(colIdx)?.trim('"')?.trim() ?: ""
+            fun getVal(idx: Int): String {
+                if (idx == -1) return ""
+                return cols.getOrNull(idx)?.trim('"')?.trim() ?: ""
             }
 
-            fun parseAmountVal(colIdx: Int): Double {
-                val str = getVal(colIdx).replace("₹", "").replace(",", "").replace("Rs.", "").replace("INR", "").trim()
+            fun parseAmt(idx: Int): Double {
+                val str = getVal(idx).replace("₹", "").replace(",", "").replace("Rs.", "").trim()
                 return str.toDoubleOrNull() ?: 0.0
             }
 
-            val particulars = getVal(particularsCol).ifBlank {
-                cols.firstOrNull { it.isNotBlank() && parseAmountVal(cols.indexOf(it)) == 0.0 }?.trim('"') ?: "Expense Item #${index + 1}"
-            }
-
-            val pLower = particulars.lowercase()
-            if (pLower.contains("total") || pLower.contains("subtotal") || pLower.contains("closing balance") || pLower.contains("opening balance") || pLower.contains("balance b/f") || pLower.contains("balance c/f")) {
-                return@mapIndexedNotNull null
-            }
-
-            val amount = parseAmountVal(amountCol)
-            val dateRaw = getVal(dateCol).ifBlank { "01" }
+            val yearRaw = getVal(yearCol).replace(".0", "").trim()
             val monthRaw = getVal(monthCol)
-            val yearRaw = getVal(yearCol)
+            val particularsRaw = getVal(particularsCol)
+            val remarksRaw = getVal(remarksCol)
 
-            val (monthStr, yearStr) = parseMonthAndYearFromDate(dateRaw, monthRaw, yearRaw)
-
-            val categoryStr = getVal(categoryCol).ifBlank {
-                if (particulars.contains("clean", ignoreCase = true) || particulars.contains("sweep", ignoreCase = true)) "Cleaning"
-                else if (particulars.contains("motor", ignoreCase = true) || particulars.contains("sensor", ignoreCase = true) || particulars.contains("alter", ignoreCase = true)) "Alteration/Additional work"
-                else "Common Purchases"
-            }
-            val vendorStr = getVal(vendorCol).ifBlank { "General Vendor" }
-            val remarksStr = getVal(remarksCol).ifBlank { "Recorded from Google Sheet" }
-            val billStr = getVal(billCol).ifBlank { "Available" }
-            val pictureStr = getVal(pictureCol).ifBlank { "N/A" }
-
-            val explicitBalance = parseAmountVal(balanceCol)
-            val finalBalance = if (explicitBalance > 0) {
-                explicitBalance
-            } else {
-                runningBalance -= amount
-                runningBalance
+            if (yearRaw.isNotBlank() && yearRaw.toDoubleOrNull() != null) {
+                currentYear = yearRaw.toDouble().toInt().toString()
             }
 
-            ExpenseRecord(
-                id = index + 1,
-                year = yearStr,
-                month = monthStr,
-                dateDay = dateRaw,
-                particulars = particulars,
-                remarks = remarksStr,
-                amount = amount,
-                vendorPayee = vendorStr,
-                billAvailable = billStr,
-                picture = pictureStr,
-                balance = finalBalance,
-                category = categoryStr
+            if (particularsRaw.contains("total", ignoreCase = true) || monthRaw.contains("total", ignoreCase = true)) {
+                continue
+            }
+
+            if (monthRaw.isBlank() && particularsRaw.isBlank()) {
+                continue
+            }
+
+            val amt1A = parseAmt(col1A)
+            val amt1B = parseAmt(col1B)
+            val amt2A = parseAmt(col2A)
+            val amt2B = parseAmt(col2B)
+            val amt3A = parseAmt(col3A)
+            val amt3B = parseAmt(col3B)
+
+            val total = amt1A + amt1B + amt2A + amt2B + amt3A + amt3B
+            if (total > 0 || monthRaw.isNotBlank()) {
+                collections.add(
+                    CollectionRecord(
+                        id = collections.size + 1,
+                        year = currentYear,
+                        month = monthRaw.ifBlank { "Month ${collections.size + 1}" },
+                        particulars = particularsRaw.ifBlank { "Monthly Maintenance" },
+                        remarks = remarksRaw,
+                        flat1AAmount = amt1A,
+                        flat1BAmount = amt1B,
+                        flat2AAmount = amt2A,
+                        flat2BAmount = amt2B,
+                        flat3AAmount = amt3A,
+                        flat3BAmount = amt3B,
+                        totalAmount = total
+                    )
+                )
+
+                flatTotals["1A"] = (flatTotals["1A"] ?: 0.0) + amt1A
+                flatTotals["1B"] = (flatTotals["1B"] ?: 0.0) + amt1B
+                flatTotals["2A"] = (flatTotals["2A"] ?: 0.0) + amt2A
+                flatTotals["2B"] = (flatTotals["2B"] ?: 0.0) + amt2B
+                flatTotals["3A"] = (flatTotals["3A"] ?: 0.0) + amt3A
+                flatTotals["3B"] = (flatTotals["3B"] ?: 0.0) + amt3B
+            }
+        }
+
+        val contributions = flatTotals.map { (flat, total) ->
+            val residentName = ownerContacts.firstOrNull { it.flatNo.equals(flat, ignoreCase = true) }?.residentName ?: "Flat $flat"
+            YearlyContribution(
+                flatNo = flat,
+                residentName = residentName,
+                amount2026 = total
             )
         }
+
+        return CollectionParseResult(collections, contributions, ownerContacts, title)
+    }
+
+    private data class ExpenseParseResult(
+        val expenses: List<ExpenseRecord>,
+        val title: String
+    )
+
+    private fun parseExpenseSheet(csv: String): ExpenseParseResult {
+        val lines = csv.lines().filter { it.isNotBlank() }
+        if (lines.isEmpty()) return ExpenseParseResult(emptyList(), "")
+
+        var title = ""
+        var headerIndex = -1
+
+        for (i in 0 until minOf(lines.size, 5)) {
+            val cols = parseCsvLine(lines[i]).map { it.lowercase().trim('"').trim() }
+            if (cols.any { it.contains("particular") || it.contains("amount") || it.contains("vendor") || it.contains("payee") || it.contains("date") }) {
+                headerIndex = i
+                break
+            } else if (i == 0 && lines[0].isNotBlank()) {
+                val firstCell = parseCsvLine(lines[0]).firstOrNull()?.trim('"')?.trim() ?: ""
+                if (firstCell.isNotBlank() && firstCell.length in 3..60) {
+                    title = firstCell.split("-").first().trim()
+                }
+            }
+        }
+
+        if (headerIndex == -1) headerIndex = 0
+
+        val headerCols = parseCsvLine(lines[headerIndex]).map { it.lowercase().trim('"').trim() }
+        val dataLines = lines.drop(headerIndex + 1)
+
+        val yearCol = headerCols.indexOfFirst { it.contains("year") || it.contains("yr") }
+        val monthCol = headerCols.indexOfFirst { it.contains("month") || it.contains("mth") }
+        val dateCol = headerCols.indexOfFirst { it.contains("date") || it.contains("day") || it.contains("dt") || it.contains("sl") || it.contains("s.no") }
+        val particularsCol = headerCols.indexOfFirst { it.contains("particular") || it.contains("description") || it.contains("item") || it.contains("detail") }
+        val remarksCol = headerCols.indexOfFirst { it.contains("remark") || it.contains("note") || it.contains("comment") }
+        val amountCol = headerCols.indexOfFirst { it.contains("amount") || it.contains("cost") || it.contains("spent") || it.contains("price") || it.contains("₹") }
+        val vendorCol = headerCols.indexOfFirst { it.contains("vendor") || it.contains("payee") || it.contains("person") || it.contains("paid") }
+        val billCol = headerCols.indexOfFirst { it.contains("bill") || it.contains("receipt") }
+        val pictureCol = headerCols.indexOfFirst { it.contains("picture") || it.contains("photo") || it.contains("image") }
+        val balanceCol = headerCols.indexOfFirst { it.contains("balance") || it.contains("bal") }
+        val categoryCol = headerCols.indexOfFirst { it.contains("category") || it.contains("type") }
+
+        var activeYear = "2026"
+        var activeMonth = "July"
+        var activeBalance = 12000.0
+        val records = mutableListOf<ExpenseRecord>()
+
+        for (line in dataLines) {
+            val cols = parseCsvLine(line)
+            if (cols.isEmpty() || cols.all { it.isBlank() }) continue
+
+            fun getVal(idx: Int): String {
+                if (idx == -1) return ""
+                return cols.getOrNull(idx)?.trim('"')?.trim() ?: ""
+            }
+
+            fun parseAmt(idx: Int): Double {
+                val str = getVal(idx).replace("₹", "").replace(",", "").replace("Rs.", "").trim()
+                return str.toDoubleOrNull() ?: 0.0
+            }
+
+            val firstCell = cols.firstOrNull()?.trim('"')?.trim() ?: ""
+            // Check if row is Opening Balance header e.g. "Opening Balance - 1 Jul 2026"
+            if (firstCell.contains("Opening Balance", ignoreCase = true) || line.contains("Opening Balance", ignoreCase = true)) {
+                if (firstCell.contains("Jul", ignoreCase = true)) activeMonth = "July"
+                else if (firstCell.contains("Aug", ignoreCase = true)) activeMonth = "August"
+                else if (firstCell.contains("Sep", ignoreCase = true)) activeMonth = "September"
+                else if (firstCell.contains("Oct", ignoreCase = true)) activeMonth = "October"
+                else if (firstCell.contains("Nov", ignoreCase = true)) activeMonth = "November"
+                else if (firstCell.contains("Dec", ignoreCase = true)) activeMonth = "December"
+                else if (firstCell.contains("Jan", ignoreCase = true)) activeMonth = "January"
+                else if (firstCell.contains("Feb", ignoreCase = true)) activeMonth = "February"
+                else if (firstCell.contains("Mar", ignoreCase = true)) activeMonth = "March"
+
+                val opBal = parseAmt(balanceCol).let { if (it > 0) it else parseAmt(amountCol) }
+                if (opBal > 0) activeBalance = opBal
+                continue
+            }
+
+            val yearRaw = getVal(yearCol).replace(".0", "").trim()
+            val monthRaw = getVal(monthCol)
+            if (yearRaw.isNotBlank() && yearRaw.toDoubleOrNull() != null) {
+                activeYear = yearRaw.toDouble().toInt().toString()
+            }
+            if (monthRaw.isNotBlank() && !monthRaw.contains("total", ignoreCase = true)) {
+                activeMonth = monthRaw
+            }
+
+            val particulars = getVal(particularsCol)
+            val pLower = particulars.lowercase()
+            val remarksLower = getVal(remarksCol).lowercase()
+
+            // Skip total and summary rows
+            if (pLower.contains("total") || remarksLower.contains("total") || pLower.startsWith("=sum") || pLower.contains("subtotal") || pLower.contains("closing balance")) {
+                continue
+            }
+
+            val amount = parseAmt(amountCol)
+            if (amount <= 0 && particulars.isBlank()) continue
+
+            var dateRaw = getVal(dateCol)
+            if (dateRaw.endsWith(".0")) {
+                dateRaw = dateRaw.substringBefore(".0")
+            }
+            if (dateRaw.length == 1) {
+                dateRaw = "0$dateRaw"
+            }
+
+            val vendorStr = getVal(vendorCol).ifBlank { "--" }
+            val remarksStr = getVal(remarksCol).ifBlank { "--" }
+            val billStr = getVal(billCol).ifBlank { "N/A" }
+            val pictureStr = getVal(pictureCol).ifBlank { "N/A" }
+
+            val explicitBalance = parseAmt(balanceCol)
+            val finalBalance = if (explicitBalance > 0) {
+                activeBalance = explicitBalance
+                explicitBalance
+            } else {
+                activeBalance -= amount
+                activeBalance
+            }
+
+            // Derive accurate category based on actual schema
+            val explicitCategory = getVal(categoryCol)
+            val finalCategory = if (explicitCategory.isNotBlank()) {
+                explicitCategory
+            } else {
+                val combinedText = "$particulars $remarksStr $vendorStr".lowercase()
+                when {
+                    combinedText.contains("clean") || combinedText.contains("salary") || combinedText.contains("chithra") || combinedText.contains("kola maavu") -> "Cleaning"
+                    combinedText.contains("eb") || combinedText.contains("electricity") || combinedText.contains("tneb") || combinedText.contains("meter") -> "Common Line EB"
+                    combinedText.contains("sensor") || combinedText.contains("motor") || combinedText.contains("installation") || combinedText.contains("cable") -> "Alteration/Additional work"
+                    combinedText.contains("supplies") || combinedText.contains("letter box") || combinedText.contains("stores") || combinedText.contains("purchases") -> "Common Purchases"
+                    combinedText.contains("lift") || combinedText.contains("amc") -> "Lift (AMC)"
+                    combinedText.contains("repair") || combinedText.contains("plumb") || combinedText.contains("leak") -> "Repair Work"
+                    else -> "Miscellaneous"
+                }
+            }
+
+            records.add(
+                ExpenseRecord(
+                    id = records.size + 1,
+                    year = activeYear,
+                    month = activeMonth,
+                    dateDay = dateRaw,
+                    particulars = particulars.ifBlank { "Expense item" },
+                    remarks = remarksStr,
+                    amount = amount,
+                    vendorPayee = vendorStr,
+                    billAvailable = billStr,
+                    picture = pictureStr,
+                    balance = finalBalance,
+                    category = finalCategory
+                )
+            )
+        }
+
+        return ExpenseParseResult(records, title)
+    }
+
+    private data class ContactsParseResult(
+        val owners: List<OwnerContact>,
+        val services: List<ServiceContact>
+    )
+
+    private fun parseContactsSheet(csv: String): ContactsParseResult {
+        val lines = csv.lines().filter { it.isNotBlank() }
+        if (lines.isEmpty()) return ContactsParseResult(emptyList(), emptyList())
+
+        val owners = mutableListOf<OwnerContact>()
+        val services = mutableListOf<ServiceContact>()
+
+        var currentSection = "" // "OWNERS" or "SERVICES"
+        var ownerHeaderCols = listOf<String>()
+        var serviceHeaderCols = listOf<String>()
+
+        for (line in lines) {
+            val cols = parseCsvLine(line).map { it.trim('"').trim() }
+            if (cols.isEmpty() || cols.all { it.isBlank() }) continue
+
+            val first = cols.first().lowercase()
+            if (first.contains("owner") || first.contains("resident") && !first.contains("name")) {
+                currentSection = "OWNERS"
+                continue
+            } else if (first.contains("service") || first.contains("vendor") && !first.contains("type")) {
+                currentSection = "SERVICES"
+                continue
+            }
+
+            if (cols.any { it.contains("flat", ignoreCase = true) || it.contains("resident name", ignoreCase = true) }) {
+                currentSection = "OWNERS"
+                ownerHeaderCols = cols.map { it.lowercase() }
+                continue
+            } else if (cols.any { it.contains("service type", ignoreCase = true) || it.contains("contact person", ignoreCase = true) }) {
+                currentSection = "SERVICES"
+                serviceHeaderCols = cols.map { it.lowercase() }
+                continue
+            }
+
+            if (currentSection == "OWNERS") {
+                val flatNoCol = ownerHeaderCols.indexOfFirst { it.contains("flat") }.let { if (it == -1) 0 else it }
+                val nameCol = ownerHeaderCols.indexOfFirst { it.contains("name") || it.contains("resident") }.let { if (it == -1) 1 else it }
+                val primaryPhoneCol = ownerHeaderCols.indexOfFirst { it.contains("primary") || it.contains("phone") || it.contains("contact") }.let { if (it == -1) 2 else it }
+                val emergencyPhoneCol = ownerHeaderCols.indexOfFirst { it.contains("emergency") }.let { if (it == -1) 3 else it }
+
+                val flatNo = cols.getOrNull(flatNoCol) ?: ""
+                val name = cols.getOrNull(nameCol) ?: ""
+                val primaryPhone = cols.getOrNull(primaryPhoneCol) ?: ""
+                val emergencyPhone = cols.getOrNull(emergencyPhoneCol) ?: ""
+
+                if (flatNo.isNotBlank() && flatNo.length <= 6 && !flatNo.contains("flat", ignoreCase = true)) {
+                    owners.add(
+                        OwnerContact(
+                            flatNo = flatNo,
+                            residentName = name,
+                            primaryContactNo = primaryPhone.replace(".0", ""),
+                            emergencyContactNo = emergencyPhone.replace(".0", "")
+                        )
+                    )
+                }
+            } else if (currentSection == "SERVICES") {
+                val typeCol = serviceHeaderCols.indexOfFirst { it.contains("type") || it.contains("service") }.let { if (it == -1) 0 else it }
+                val personCol = serviceHeaderCols.indexOfFirst { it.contains("person") || it.contains("name") || it.contains("contact") }.let { if (it == -1) 1 else it }
+                val phoneCol = serviceHeaderCols.indexOfFirst { it.contains("phone") || it.contains("mobile") || it.contains("no") }.let { if (it == -1) 2 else it }
+                val remarksCol = serviceHeaderCols.indexOfFirst { it.contains("remark") || it.contains("detail") || it.contains("note") }.let { if (it == -1) 3 else it }
+
+                val sType = cols.getOrNull(typeCol) ?: ""
+                val sPerson = cols.getOrNull(personCol) ?: ""
+                val sPhone = cols.getOrNull(phoneCol) ?: ""
+                val sRemarks = cols.getOrNull(remarksCol) ?: ""
+
+                if (sType.isNotBlank() && !sType.contains("service type", ignoreCase = true)) {
+                    services.add(
+                        ServiceContact(
+                            serviceType = sType,
+                            contactPerson = sPerson,
+                            phoneNo = sPhone.replace(".0", ""),
+                            remarks = sRemarks
+                        )
+                    )
+                }
+            }
+        }
+
+        return ContactsParseResult(owners, services)
+    }
+
+    private data class YearlyReportParseResult(
+        val contributions: List<YearlyContribution>,
+        val categories: List<YearlyExpenseCategory>,
+        val majorWorks: List<MajorWork>
+    )
+
+    private fun parseYearlyReportSheet(csv: String): YearlyReportParseResult {
+        val lines = csv.lines().filter { it.isNotBlank() }
+        if (lines.isEmpty()) return YearlyReportParseResult(emptyList(), emptyList(), emptyList())
+
+        val contributions = mutableListOf<YearlyContribution>()
+        val categories = mutableListOf<YearlyExpenseCategory>()
+        val majorWorks = mutableListOf<MajorWork>()
+
+        var currentSection = "" // "CONTRIBUTION", "EXPENSE", "MAJOR_WORKS"
+
+        for (line in lines) {
+            val cols = parseCsvLine(line).map { it.trim('"').trim() }
+            if (cols.isEmpty() || cols.all { it.isBlank() }) continue
+
+            val first = cols.first().lowercase()
+            if (first.contains("contribution summary") || first.contains("contribution")) {
+                currentSection = "CONTRIBUTION"
+                continue
+            } else if (first.contains("expense summary") || first.contains("expense category")) {
+                currentSection = "EXPENSE"
+                continue
+            } else if (first.contains("major work") || first.contains("capital work")) {
+                currentSection = "MAJOR_WORKS"
+                continue
+            }
+
+            if (cols.any { it.contains("flat", ignoreCase = true) || it.contains("payee", ignoreCase = true) }) {
+                currentSection = "CONTRIBUTION"
+                continue
+            } else if (cols.any { it.contains("category", ignoreCase = true) || it.contains("service", ignoreCase = true) }) {
+                currentSection = "EXPENSE"
+                continue
+            }
+
+            fun parseAmount(idx: Int): Double {
+                val cell = cols.getOrNull(idx)?.replace("₹", "")?.replace(",", "")?.trim() ?: ""
+                return cell.toDoubleOrNull() ?: 0.0
+            }
+
+            if (currentSection == "CONTRIBUTION") {
+                val flatRaw = cols.getOrNull(0) ?: ""
+                val amt = parseAmount(1).let { if (it > 0) it else parseAmount(2) }
+                if (flatRaw.isNotBlank() && !flatRaw.contains("total", ignoreCase = true)) {
+                    val flatNo = if (flatRaw.contains("-")) flatRaw.substringBefore("-").trim() else flatRaw
+                    val residentName = if (flatRaw.contains("-")) flatRaw.substringAfter("-").trim() else ""
+                    contributions.add(
+                        YearlyContribution(
+                            flatNo = flatNo,
+                            residentName = residentName,
+                            amount2026 = amt
+                        )
+                    )
+                }
+            } else if (currentSection == "EXPENSE") {
+                val catRaw = cols.getOrNull(0) ?: ""
+                val amt = parseAmount(1).let { if (it > 0) it else parseAmount(2) }
+                if (catRaw.isNotBlank() && !catRaw.contains("total", ignoreCase = true)) {
+                    categories.add(
+                        YearlyExpenseCategory(
+                            category = catRaw,
+                            amount2026 = amt
+                        )
+                    )
+                }
+            } else if (currentSection == "MAJOR_WORKS") {
+                val workRaw = cols.getOrNull(0) ?: ""
+                val amt = parseAmount(1).let { if (it > 0) it else parseAmount(2) }
+                if (workRaw.isNotBlank() && !workRaw.contains("total", ignoreCase = true)) {
+                    majorWorks.add(
+                        MajorWork(
+                            description = workRaw,
+                            amount2026 = amt
+                        )
+                    )
+                }
+            }
+        }
+
+        return YearlyReportParseResult(contributions, categories, majorWorks)
     }
 
     private fun parseCsvLine(line: String): List<String> {

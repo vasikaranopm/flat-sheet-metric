@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
         ServiceContact::class,
         GoogleSheetConfig::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -69,6 +69,16 @@ abstract class AppDatabase : RoomDatabase() {
                         val defaultSheetId = extractSpreadsheetId(getDefaultSheetLinkEnv())
                         if (currentConfig == null) {
                             populateInitialData(database)
+                        } else if (currentConfig.spreadsheetId.contains("1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms")) {
+                            // Purge old dummy spreadsheet id and dummy records
+                            database.expenseDao().clearAll()
+                            database.yearlyReportDao().clearContributions()
+                            database.yearlyReportDao().clearCategories()
+                            database.yearlyReportDao().clearMajorWorks()
+                            database.contactsDao().clearOwners()
+                            database.contactsDao().clearServices()
+                            database.collectionDao().clearAll()
+                            database.configDao().saveConfig(currentConfig.copy(spreadsheetId = "", spreadsheetTitle = "Apartment Maintenance Ledger", lastSyncTime = 0L))
                         } else if (currentConfig.spreadsheetId.isBlank() && defaultSheetId.isNotBlank()) {
                             val updatedConfig = currentConfig.copy(spreadsheetId = defaultSheetId)
                             database.configDao().saveConfig(updatedConfig)

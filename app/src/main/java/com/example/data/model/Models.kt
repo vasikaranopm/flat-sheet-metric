@@ -103,7 +103,10 @@ fun extractGid(input: String): String? {
 fun getDefaultSheetLinkEnv(): String {
     return try {
         val link = com.example.BuildConfig.DEFAULT_SHEET_LINK
-        if (link == "DEFAULT_SHEET_LINK_PLACEHOLDER") "" else link
+        if (link.isNullOrBlank() ||
+            link == "DEFAULT_SHEET_LINK_PLACEHOLDER" ||
+            link.contains("1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms")
+        ) "" else link.trim()
     } catch (e: Exception) {
         ""
     }
